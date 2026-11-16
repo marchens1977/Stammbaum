@@ -445,6 +445,7 @@ function pointerEnd(e) {
   pointers.delete(e.pointerId);
   if (pointers.size === 0) {
     if (down && !down.moved && e.type === 'pointerup') {
+      lastTreeTap = Date.now();
       const card = down.target.closest && down.target.closest('[data-id]');
       const ghost = down.target.closest && down.target.closest('[data-add]');
       if (card) openDetail(card.dataset.id);
@@ -458,6 +459,12 @@ function pointerEnd(e) {
   }
 }
 svg.addEventListener('pointerup', pointerEnd);
+// Nach einem Tipp im Baum schickt das Handy noch einen „Klick“ hinterher. Der würde sonst in der gerade
+// geöffneten Detailansicht landen (z. B. auf „Eltern“) und die falsche Person öffnen – deshalb kurz ignorieren.
+let lastTreeTap = 0;
+document.addEventListener('click', e => {
+  if (Date.now() - lastTreeTap < 600 && !svg.contains(e.target)) { e.stopPropagation(); e.preventDefault(); }
+}, true);
 svg.addEventListener('pointercancel', pointerEnd);
 svg.addEventListener('wheel', e => {
   e.preventDefault(); const r = svg.getBoundingClientRect();

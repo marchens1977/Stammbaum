@@ -132,6 +132,8 @@
   .partner-row { display: flex; align-items: center; justify-content: space-between; background: #f3ead4; border-radius: 10px; padding: 6px 10px; margin-bottom: 6px; }
   .partner-row button { background: none; border: none; color: #a33; font-size: 1.1rem; }
   [hidden] { display: none !important; }
+  .snip { background: #fff; border: 1px solid #d8c9a3; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; font-size: .88rem; cursor: pointer; }
+  .snip.on { border: 2px solid var(--green); background: #eef5ea; }
   .phototip { font-size: .88rem; margin-top: 8px; } .phototip summary { color: var(--green); font-weight: 600; cursor: pointer; } .phototip ol { margin: 6px 0; padding-left: 20px; }
   label.sug { display: flex; gap: 10px; align-items: flex-start; background: #fff; border: 1px solid #d8c9a3; border-radius: 12px; padding: 10px; margin: 0 0 8px; color: var(--ink); font-size: .95rem; }
   label.sug input { width: 22px; height: 22px; flex: none; margin-top: 2px; }
@@ -741,7 +743,12 @@ function renderSugs(sugs) {
 function applySuggestions(p, chosen) {
   const order = { father: 0, mother: 1, spouse: 3, child: 4, sibling: 5 };
   chosen.sort((a, b) => (a.type === 'field' ? 2 : order[a.role]) - (b.type === 'field' ? 2 : order[b.role]));
-  const srcLine = (q, what, s) => { if (s.source) q.sources = (q.sources ? q.sources + '\n' : '') + `${what}: ${s.source} (${s.sure})`; };
+  // Quellen sammeln: pro Person und Quelle nur eine Zeile („Geburtsdatum, Sterbeort: Link (sicher)“)
+  const groups = new Map();
+  const srcLine = (q, what, s) => {
+    if (!s.source) return; const k = q.id + '|' + s.source + '|' + s.sure;
+    if (!groups.has(k)) groups.set(k, { q, what: [], s }); groups.get(k).what.push(what);
+  };
   chosen.forEach(s => {
     if (s.type === 'field') {
       const q = P(s.target); q[s.field] = s.value;
@@ -757,6 +764,7 @@ function applySuggestions(p, chosen) {
       data.persons[np.id] = np; link(p.id, s.role, np.id);
     }
   });
+  groups.forEach(({ q, what, s }) => { q.sources = (q.sources ? q.sources + '\n' : '') + `${what.join(', ')}: ${s.source} (${s.sure})`; });
 }
 function importClaude(id) {
   const p = P(id); if (!p) return;
@@ -864,16 +872,55 @@ async function wikiItems(url) {
   return { items, name: wdLabel(main, w.lang) || page.title, gender: g === 'Q6581097' ? 'm' : g === 'Q6581072' ? 'w' : '' };
 }
 
+// ---- Beliebige Webseite / PDF auslesen ----
+// Der Browser darf fremde Seiten nicht selbst lesen. Deshalb holt ein öffentlicher Lese-Dienst (Jina Reader)
+// den reinen Text. Dorthin geht NUR der Link – keine Daten aus dem Stammbaum.
+const READER = 'https://r.jina.ai/';
+async function readPage(url) {
+  const r = await fetch(READER + url, { headers: { Accept: 'text/plain' } });
+  if (!r.ok) throw new Error('read ' + r.status);
+  let t = await r.text();
+  t = t.replace(/^[\s\S]*?Markdown Content:\s*/, '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\*\*/g, ' ').replace(/[#>|_]+/g, ' ').replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim();
+  return t;
+}
+// Stellen im Text finden, an denen die Person vorkommt (Nachname/Geburtsname, möglichst mit Vorname und Daten)
+function findSnippets(p, text) {
+  const low = text.toLowerCase();
+  const names = [p.lastName, p.birthName].filter(Boolean).map(s => s.toLowerCase());
+  const first = (p.firstName || '').split(/\s+/)[0].toLowerCase();
+  const hits = [];
+  names.forEach(n => { let i = low.indexOf(n); while (i >= 0 && hits.length < 80) { hits.push(i); i = low.indexOf(n, i + n.length); } });
+  hits.sort((a, b) => a - b);
+  const snips = []; let lastEnd = -1;
+  hits.forEach(i => {
+    if (i < lastEnd) return;
+    // Anfang beim Vornamen, wenn er kurz davor steht
+    let start = i;
+    if (first) { const f = low.lastIndexOf(first, i); if (f >= 0 && i - f < 60) start = f; }
+    start = Math.max(0, start - 15);
+    const end = Math.min(text.length, i + 320); lastEnd = end;
+    const sn = text.slice(start, end).trim(), sl = sn.toLowerCase();
+    let score = 1;
+    if (first && sl.includes(first)) score += 3;
+    if (/[*†✝]|geb\.|gest\.|geboren|gestorben|verstorben|getauft|beerdigt/i.test(sn)) score += 2;
+    if (/\d{1,2}\.\s?\d{1,2}\.\s?\d{4}|\b1[5-9]\d\d\b|\b20[0-2]\d\b/.test(sn)) score += 1;
+    snips.push({ text: (start > 0 ? '… ' : '') + sn + (end < text.length ? ' …' : ''), score });
+  });
+  return snips.sort((a, b) => b.score - a.score).slice(0, 6);
+}
+
 // ---- Fund übernehmen: Text von einer Webseite / aus Google (eingefügt oder über „Teilen“) ----
 function findingPrompt(p, text, url) {
   return `Ich erforsche meine Familiengeschichte (rein privat). Ich habe einen möglichen Fund zu dieser verstorbenen Person:
 
 Person: ${personLine(p)}
 
-Gefundener Text${url ? ' (Quelle: ' + url + ')' : ''}:
+${text ? `Gefundener Text${url ? ' (Quelle: ' + url + ')' : ''}:
 """
 ${text}
-"""
+"""` : `Bitte öffne und lies diese Seite: ${url}`}
 
 Bitte prüfe, ob der Fund wirklich zu dieser Person passt (Achtung Namensvettern!), und erkläre kurz, warum. Erfinde nichts.
 ${CLAUDE_FORMAT}`;
@@ -887,13 +934,15 @@ function addFinding(id, pre = {}) {
     <h2>📥 Fund übernehmen: ${esc(fullName(p))}</h2>
     <p class="hint">Text aus einem Google-Treffer oder von einer Webseite: markieren → <b>Kopieren</b> → hier einfügen.
       Tipp: In Chrome geht es noch schneller über <b>Teilen → Stammbaum</b>.
-      Bei einer <b>ganzen geteilten Seite</b> kommt nur der Link an – bei <b>Wikipedia</b> holt die App die Daten dann selbst, bei anderen Seiten bitte den Text markieren und teilen/kopieren.</p>
+      Bei einer <b>ganzen geteilten Seite</b> kommt nur der Link an – die App liest die Seite dann selbst aus (bei Wikipedia sogar mit fertigen Lebensdaten).</p>
     <button class="btn" id="fPaste" style="width:100%">📋 Aus Zwischenablage einfügen</button>
     <label>Gefundener Text</label><textarea id="fText" placeholder="z. B. „Johann Weber, * 12.3.1850 in Rothenburg, † 1920 …“">${esc(preText)}</textarea>
     <label>Quelle (Link oder Beschreibung)</label><input id="fSrc" value="${esc(pre.url || firstUrl(preText))}" placeholder="z. B. Link zur Seite oder Kirchenbuch St. Jakob 1880, S. 45">
     <label>Wie sicher passt das zu ${esc(p.firstName || 'der Person')}?</label>
     <div class="seg" id="fSure"><button type="button" data-v="sicher">sicher</button><button type="button" data-v="wahrscheinlich" class="on">wahrscheinlich</button><button type="button" data-v="unsicher">unsicher</button></div>
     <button class="btn primary" id="fWiki" style="width:100%;margin-top:12px" hidden>📖 Daten aus Wikipedia holen</button>
+    <button class="btn primary" id="fRead" style="width:100%;margin-top:12px" hidden>🌐 Seite / PDF auslesen</button>
+    <div id="fSnips"></div>
     <div class="hint" id="fWikiMsg"></div>
     <button class="btn primary" id="fParse" style="width:100%;margin-top:12px">🔍 Daten im Text erkennen</button>
     ${prot ? '' : '<button class="btn" id="fClaude" style="width:100%;margin-top:8px">🤖 Lieber von Claude prüfen lassen</button>'}
@@ -938,7 +987,30 @@ function addFinding(id, pre = {}) {
       wiki = res; wMsg.textContent = `✓ Daten zu „${res.name}“ gefunden (${res.items.length}).`; parse();
     } catch (e) { console.warn('wiki', e); wMsg.textContent = 'Wikipedia ist gerade nicht erreichbar. Alternativ: Text im Artikel markieren und kopieren.'; }
   };
-  const checkWiki = () => { wBtn.hidden = !wikiFromUrl(SRC()); };
+  const rBtn = dlg.querySelector('#fRead'), snipBox = dlg.querySelector('#fSnips');
+  const isUrl = u => /^https?:\/\//i.test(u);
+  const useSnippet = t => { dlg.querySelector('#fText').value = t.replace(/^… | …$/g, ''); wiki = null; parse(); };
+  const readUrl = async () => {
+    snipBox.innerHTML = '<div class="hint">⏳ Lese die Seite … (kann bei PDFs etwas dauern)</div>';
+    try {
+      const text = await readPage(SRC());
+      const sn = findSnippets(p, text);
+      if (!sn.length) {
+        snipBox.innerHTML = `<div class="research locked">Der Name ${esc(p.lastName || p.birthName || '')} kommt auf der Seite nicht vor (oder die Seite ist ein Bild/Scan).` + (prot ? '' : ' Tipp: „🤖 Lieber von Claude prüfen lassen“.') + '</div>';
+        return;
+      }
+      snipBox.innerHTML = `<h3>Stellen mit „${esc(p.lastName || p.birthName)}“ (${sn.length})</h3><p class="hint">Die beste Stelle ist schon übernommen. Passt eine andere besser? Einfach antippen.</p>`
+        + sn.map((x, i) => `<div class="snip" data-s="${i}">${esc(x.text)}</div>`).join('');
+      snipBox.querySelectorAll('[data-s]').forEach(d => d.onclick = () => {
+        snipBox.querySelectorAll('.snip').forEach(x => x.classList.toggle('on', x === d)); useSnippet(sn[+d.dataset.s].text);
+      });
+      snipBox.querySelector('.snip').classList.add('on'); useSnippet(sn[0].text);
+    } catch (e) {
+      snipBox.innerHTML = '<div class="research locked">Die Seite konnte nicht gelesen werden (manche Seiten sperren das oder brauchen eine Anmeldung). Dann bitte den Text markieren und kopieren/teilen.' + (prot ? '' : ' Oder „🤖 Lieber von Claude prüfen lassen“.') + '</div>';
+    }
+  };
+  rBtn.onclick = readUrl;
+  const checkWiki = () => { wBtn.hidden = !wikiFromUrl(SRC()); rBtn.hidden = !isUrl(SRC()) || !!wikiFromUrl(SRC()); };
   dlg.querySelector('#fSrc').addEventListener('input', checkWiki);
   wBtn.onclick = loadWiki;
   checkWiki();
@@ -948,7 +1020,7 @@ function addFinding(id, pre = {}) {
   };
   const cl = dlg.querySelector('#fClaude');
   if (cl) cl.onclick = async () => {
-    if (!T()) { alert('Bitte zuerst den gefundenen Text einfügen.'); return; }
+    if (!T() && !SRC()) { alert('Bitte zuerst den gefundenen Text oder Link einfügen.'); return; }
     const ok = await copyText(findingPrompt(p, T(), SRC()));
     window.open('https://claude.ai/new', '_blank', 'noopener');
     toast(ok ? '✓ Text kopiert – in Claude einfügen. Die Antwort dann über „Recherche → Claude-Antwort einfügen“ übernehmen.' : 'Kopieren hat nicht geklappt.');
@@ -964,7 +1036,11 @@ function addFinding(id, pre = {}) {
     if (s && !chosen.some(c => c.source)) p.sources = (p.sources ? p.sources + '\n' : '') + s;
     save(); closeModal(); refresh(); openDetail(id);
   };
-  if (wikiFromUrl(SRC())) loadWiki(); else if (preText) parse();
+  // Geteilte Seite ohne markierten Text → automatisch auslesen
+  const onlyTitle = !pre.text || pre.text.length < 80;
+  if (wikiFromUrl(SRC())) loadWiki();
+  else if (isUrl(SRC()) && pre.url && onlyTitle) readUrl();
+  else if (preText) parse();
 }
 
 // ---- „Teilen → Stammbaum“ aus Chrome: Person auswählen, dann Fund übernehmen ----
@@ -1077,7 +1153,14 @@ function parseEvent(seg) {
   seg = clean(seg); const out = {};
   const pm = seg.match(/(?:^|\s)(?:in|zu|im ort)\s+(.+)$/i);
   if (pm && !/^\d/.test(pm[1]) && !/^(jahr|jahre|januar|februar|märz|april|mai|juni|juli|august|september|oktober|november|dezember)\b/i.test(pm[1])) {
-    out.place = capFirst(clean(pm[1])); seg = seg.slice(0, pm.index);
+    let pl = pm[1].split(/[.;:!?()\n]|\s[-–]\s|,\s/)[0];
+    const w = pl.trim().split(/\s+/), keep = [];
+    for (const x of w) {   // Ort endet beim ersten Wort, das nicht zum Ortsnamen gehört
+      if (keep.length && !/^[A-ZÄÖÜ]/.test(x) && !/^(ob|an|am|im|in|bei|auf|der|die|den|vor|unter|ober|a\.|i\.|v\.|d\.)$/i.test(x)) break;
+      if (keep.length && /^(In|Die|Der|Das|Wir|Und|Er|Sie|Es|Am|Im|Mit|Zum|Zur|Beerdigung|Trauerfeier|Familie)$/.test(x)) break;
+      keep.push(x); if (keep.length >= 5) break;
+    }
+    out.place = capFirst(clean(keep.join(' '))); seg = seg.slice(0, pm.index);
   }
   let d = clean(seg).replace(/^(am|im jahre?|im|anno|des jahres)\s+/i, '').replace(/\s+im jahre?\s+/i, ' ').replace(/^den\s+/i, '');
   let n = normDate(d);
@@ -1090,7 +1173,7 @@ function parseEvent(seg) {
 }
 function parseSpoken(text) {
   const r = {};
-  let s = ' ' + String(text || '').replace(/\s+/g, ' ').trim() + ' ';
+  let s = ' ' + String(text || '').replace(/\s*\n\s*/g, '. ').replace(/\s+/g, ' ').trim() + ' ';
   // geschriebene Formen: „* 3.4.1950“, „† 2001“, „geb. am“, „Geburtsdatum:“ …
   s = s.replace(/\*\s*(?=\d|am\s|in\s|um\s|ca)/gi, ' geboren ').replace(/[†✝✞]\s*/g, ' gestorben ')
     .replace(/\bgeb\.\s*(?=am\s|in\s|\d|um\s|ca)/gi, ' geboren ').replace(/\bgest\.\s*(?=am\s|in\s|\d|um\s|ca)/gi, ' gestorben ')

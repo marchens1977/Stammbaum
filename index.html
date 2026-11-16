@@ -216,7 +216,7 @@ const MAX_ANCESTOR_GENS = 3;      // wie viele Generationen nach oben (Eltern, G
 const MAX_DESC_GENS = 2;          // wie viele Generationen nach unten (Kinder, Enkel)
 const PROTECT_YEARS = 110;        // wer vor mehr als so vielen Jahren geboren wurde, gilt als verstorben
 const STORE_KEY = 'stammbaum-daten-v1';
-const APP_VERSION = '2026-11-16 Nr. 21';   // bei jeder Änderung hochzählen – steht unten im Menü
+const APP_VERSION = '2026-11-16 Nr. 23';   // bei jeder Änderung hochzählen – steht unten im Menü
 const THIS_YEAR = new Date().getFullYear();
 
 // ====================== Daten ======================
@@ -936,6 +936,57 @@ async function wikiItems(url) {
   return { items, text, name: wdLabel(main, w.lang) || page.title, gender: g === 'Q6581097' ? 'm' : g === 'Q6581072' ? 'w' : '' };
 }
 
+// ====================== Texterkennung aus Bildern (OCR) – läuft direkt im Handy ======================
+// Die Erkennungs-Software (Tesseract) wird beim ersten Mal aus einem öffentlichen Programm-Verzeichnis
+// (jsDelivr) geladen und danach vom Browser gespeichert. Das Bild selbst verlässt das Handy nicht.
+const OCR_CDN = 'https://cdn.jsdelivr.net/npm/';
+let ocrWorker = null, ocrProgress = null;
+function loadScript(src) {
+  return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('script')); document.head.appendChild(s); });
+}
+// Bild vorbereiten: kleine Bilder vergrößern, in Graustufen umwandeln (verbessert die Erkennung)
+function prepareImage(blob) {
+  return new Promise((res, rej) => {
+    const img = new Image(), url = URL.createObjectURL(blob);
+    img.onload = () => {
+      // nur sehr kleine Bilder vergrößern; sonst unverändert (Filter verschlechtern Schreibschrift eher)
+      const k = img.width < 700 ? Math.min(2.5, 1200 / img.width) : 1;
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      const g = c.getContext('2d'); g.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url); res(c);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('bild')); };
+    img.src = url;
+  });
+}
+async function ocrImage(blob, onProgress) {
+  ocrProgress = onProgress || null;
+  if (!window.Tesseract) await loadScript(OCR_CDN + 'tesseract.js@5.1.1/dist/tesseract.min.js');
+  if (!ocrWorker) ocrWorker = await Tesseract.createWorker('deu', 1, {
+    workerPath: OCR_CDN + 'tesseract.js@5.1.1/dist/worker.min.js',
+    corePath: OCR_CDN + 'tesseract.js-core@5.1.1',
+    langPath: OCR_CDN + '@tesseract.js-data/deu/4.0.0_best_int',
+    logger: m => { if (ocrProgress) ocrProgress(m); }
+  });
+  const { data } = await ocrWorker.recognize(await prepareImage(blob));
+  return data.text || '';
+}
+// Typische Lesefehler bei Namen korrigieren („Kral“ → „Karl“, „Arnna“ → „Anna“)
+function ocrFixWord(w, pool) {
+  if (!w || w.length < 4 || pool.has(w)) return w;
+  let best = null, bd = 99;
+  pool.forEach(k => { if (Math.abs(k.length - w.length) > 2) return; const d = lev(w, k); if (d < bd) { bd = d; best = k; } });
+  return best && bd <= (w.length >= 5 ? 2 : 1) ? best : w;
+}
+function ocrNamePools() {
+  const first = new Set(FIRST_SET), last = new Set();
+  Object.values(data.persons).forEach(q => {
+    String(q.firstName || '').split(/\s+/).forEach(x => x.length > 2 && first.add(x));
+    [q.lastName, q.birthName].forEach(x => x && last.add(x));
+  });
+  return { first, last };
+}
+
 // ---- Beliebige Webseite / PDF auslesen ----
 // Der Browser darf fremde Seiten nicht selbst lesen. Deshalb holt ein öffentlicher Lese-Dienst (Jina Reader)
 // den reinen Text. Dorthin geht NUR der Link – keine Daten aus dem Stammbaum.
@@ -950,12 +1001,17 @@ function htmlToText(html) {
   doc.querySelectorAll('br,p,div,li,h1,h2,h3,h4,tr').forEach(x => x.append('\n'));
   return doc.body ? doc.body.textContent : '';
 }
+let lastPageImages = [];
 async function readPage(url) {
-  let t = '';
+  let t = ''; lastPageImages = [];
   try {   // 1. Versuch: Jina Reader (kann auch PDFs)
     const r = await fetchTimeout(READER + url, { headers: { Accept: 'text/plain' } });
     if (!r.ok) throw new Error('read ' + r.status);
     t = await r.text();
+    lastPageImages = [...t.matchAll(/!\[([^\]]*)\]\((https?:[^)\s]+)\)/g)]
+      .filter(m => /\.(jpe?g|png|webp)(\?|$)/i.test(m[2]) && !/logo|icon|sprite|avatar|banner|button|pixel|placeholder|thumb/i.test(m[2] + m[1]))
+      .sort((a, b) => (/anzeige|trauer|nachruf/i.test(b[1] + b[2]) ? 1 : 0) - (/anzeige|trauer|nachruf/i.test(a[1] + a[2]) ? 1 : 0))
+      .map(m => m[2]);
     if (!/<\/?(html|body|p|div|span|br|td)\b/i.test(t))   // Text/Markdown aufräumen (HTML wird unten umgewandelt)
       t = t.replace(/^[\s\S]*?Markdown Content:\s*/, '')
         .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
@@ -997,9 +1053,10 @@ function findSnippets(p, text) {
 }
 
 // ---- Häufige Vornamen (zum Erkennen von Namen im Text und des Geschlechts) ----
-const FIRST_M = 'Adam Adolf Albert Albrecht Alexander Alfons Alfred Alois Andreas Anton Arnold Arthur August Axel Benedikt Benjamin Bernd Bernhard Bruno Carl Christian Christoph Claus Daniel David Dennis Dieter Dietrich Dirk Dominik Eberhard Eduard Egon Emil Erich Ernst Erwin Eugen Fabian Felix Ferdinand Florian Frank Franz Friedrich Fritz Georg Gerd Gerhard Gottfried Gottlieb Gregor Gustav Günter Günther Hans Harald Hartmut Heinrich Heinz Helmut Helmuth Herbert Hermann Horst Hubert Hugo Ignaz Jakob Jan Jens Joachim Johann Johannes Jonas Josef Joseph Julius Jörg Jürgen Kai Karl Kaspar Klaus Konrad Kurt Leo Leon Leonhard Lorenz Lothar Ludwig Lukas Manfred Marc Marcel Marco Mario Markus Martin Matthias Max Maximilian Michael Moritz Niklas Nikolaus Norbert Oliver Oskar Otto Paul Peter Philipp Rainer Ralf Reinhard Reinhold Richard Robert Roland Rolf Rudolf Rüdiger Sebastian Simon Stefan Stephan Sven Thomas Thorsten Tim Timo Tobias Torsten Ulrich Uwe Valentin Viktor Volker Walter Werner Wilhelm Willi Willy Wolfgang Xaver'.split(' ');
-const FIRST_W = 'Adelheid Agnes Alexandra Alice Amalie Andrea Angela Angelika Anja Anna Anne Annemarie Antje Antonia Auguste Babette Barbara Beate Berta Bertha Birgit Brigitte Carina Carola Caroline Charlotte Christa Christel Christiane Christina Christine Clara Claudia Cornelia Dagmar Daniela Dora Doris Dorothea Edith Elfriede Elisabeth Elise Elke Ella Elsa Else Emilie Emma Erika Erna Eva Franziska Frieda Friederike Gabriele Gerda Gertrud Gisela Greta Gudrun Hanna Hannah Hannelore Hedwig Heidi Heike Helene Helga Henriette Hermine Hilde Hildegard Ilse Inge Ingeborg Ingrid Irene Irmgard Jana Johanna Josefa Josephine Julia Juliane Jutta Karin Karla Karolina Katharina Kathrin Klara Kreszentia Kristina Laura Lea Lena Lieselotte Lina Lisa Louise Luise Magdalena Margarete Margaretha Margot Maria Marianne Marie Marion Martha Mathilde Melanie Mia Monika Nadine Nicole Olga Paula Pauline Petra Regina Renate Rita Rosa Rosemarie Ruth Sabine Sandra Sarah Silke Sofia Sophie Stefanie Susanne Therese Theresia Ursula Ute Verena Veronika Waltraud Wilhelmine Yvonne'.split(' ');
+const FIRST_M = 'Adam Adolf Albert Albrecht Alexander Alfons Alfred Alois Andreas Anton Arnold Arthur August Axel Ben Benedikt Benjamin Bernd Bernhard Bruno Carl Christian Christoph Claus Daniel David Dennis Detlef Dieter Dietrich Dirk Dominik Eberhard Eduard Egon Elias Elijah Elmar Emil Erich Ernst Erwin Eugen Fabian Felix Ferdinand Finn Florian Frank Franz Friedrich Fritz Georg Gerd Gerhard Gottfried Gottlieb Gregor Gustav Günter Günther Hans Hansi Harald Hartmut Heiner Heinrich Heinz Helmut Helmuth Henry Herbert Hermann Holger Horst Hubert Hugo Ignaz Ingo Jakob Jan Jens Joachim Jochen Johann Johannes Jonas Josef Joseph Julius Jörg Jürgen Kai Karl Kaspar Kevin Klaus Konrad Kurt Lars Leo Leon Leonhard Levi Liam Lorenz Lothar Luca Ludwig Luis Lukas Manfred Marc Marcel Marco Mario Markus Martin Marvin Mats Matthias Max Maximilian Michael Milan Moritz Niklas Nikolaus Nils Noah Norbert Ole Oliver Oskar Otto Pascal Patrick Paul Peter Philipp Rainer Ralf Ralph Reinhard Reinhold Rene René Richard Robert Robin Roland Rolf Rudi Rudolf Rüdiger Sascha Sebastian Siegfried Simon Stefan Steffen Stephan Sven Sören Theo Thomas Thorsten Till Tim Timo Tobias Torsten Udo Ulrich Uwe Valentin Viktor Volker Walter Werner Wilfried Wilhelm Willi Willy Winfried Wolfgang Xaver'.split(' ');
+const FIRST_W = 'Adelheid Agnes Alexandra Alice Amalie Andrea Angela Angelika Anja Anke Anna Anne Annemarie Antje Antonia Auguste Ava Babette Barbara Beate Berta Bertha Birgit Brigitte Carina Carola Caroline Charlotte Christa Christel Christiane Christina Christine Clara Claudia Cornelia Dagmar Daniela Dora Doris Dorothea Edith Elfriede Elisabeth Elise Elke Ella Elsa Else Emilie Emma Erika Erna Eva Franziska Frieda Friederike Gabi Gabriele Gaby Gerda Gertrud Gisela Gitte Greta Gudrun Hanna Hannah Hanne Hannelore Hedwig Heidi Heike Helene Helga Henriette Hermine Hilde Hildegard Ida Ilse Inge Ingeborg Ingrid Irene Irmgard Jana Jessica Johanna Josefa Josephine Julia Juliane Jutta Karin Karla Karolina Katharina Kathrin Katja Kerstin Kim Klara Kreszentia Kristina Lara Laura Lea Lena Leni Lieselotte Lina Lisa Lotta Louise Luisa Luise Magdalena Maike Manuela Maren Margarete Margaretha Margot Maria Marianne Marie Marion Martha Martina Mathilde Meike Melanie Mia Mila Miriam Monika Nadine Nele Nicole Nina Olga Paula Pauline Petra Regina Renate Rita Rosa Rosemarie Ruth Sabine Sandra Sarah Silke Silvia Simone Sofia Sonja Sophie Stefanie Susanne Svenja Tamara Tanja Therese Theresia Ulla Ursula Uschi Uta Ute Vanessa Verena Veronika Waltraud Wilhelmine Yvonne'.split(' ');
 const FIRST_SET = new Set(FIRST_M.concat(FIRST_W));
+let OCR_MODE = false;   // true, wenn der Text aus der Bilderkennung stammt (dann Namen korrigieren)
 function genderOfFirst(n) { const f = String(n || '').split(/\s+/)[0]; return FIRST_M.includes(f) ? 'm' : FIRST_W.includes(f) ? 'w' : ''; }
 // Alle Namen im Text, die mit einem bekannten Vornamen beginnen („Peter Weber“, „Petra“)
 function namesInText(text, p) {
@@ -1009,6 +1066,7 @@ function namesInText(text, p) {
   while ((m = re.exec(text)) && out.length < 40) {
     if (!FIRST_SET.has(m[1])) { re.lastIndex = m.index + m[1].length; continue; }
     if (text[m.index - 1] === '(') continue;   // Spitzname in Klammern („Friedrich (Fritz) Weber“)
+    if (/\d\.\s*$/.test(text.slice(Math.max(0, m.index - 4), m.index)) || /^\s*\d{4}/.test(text.slice(m.index + m[0].length))) continue;   // „28. August 2025“ ist ein Datum
     const rest = m[2].trim().split(/\s+/).filter(Boolean).filter(w => !/^(Und|Mit|Die|Der|Das|In|Im|Am)$/.test(w));
     // weitere Vornamen dazunehmen, letzter Teil ist der Nachname
     let name = [m[1]].concat(rest).join(' ');
@@ -1037,7 +1095,7 @@ function relOfWord(w) {
 }
 function obituaryNames(raw, p) {
   const text = String(raw || '');
-  const trig = text.match(/(?:In\s+(?:Liebe(?:\s+und\s+Dankbarkeit)?|stiller\s+Trauer|tiefer\s+Trauer|Dankbarkeit|Liebe\s+und\s+Trauer|Trauer\s+und\s+Dankbarkeit)|Es\s+trauern|(?:nehmen|nahmen)\s+(?:wir\s+)?Abschied|Abschied\s+nehmen)[^\n]*\n?/i);
+  const trig = text.match(/(?:In\s+(?:Liebe(?:\s+und\s+Dankbarkeit)?|stiller\s+Trauer|tiefer\s+Trauer|Dankbarkeit|Liebe\s+und\s+Trauer|Trauer\s+und\s+Dankbarkeit)|Es\s+trauern|(?:nehmen|nahmen)\s+(?:wir\s+)?Abschied|Abschied\s+nehmen|Dankbarkeit\s+(?:müssen|nehmen)|Abschie\w*\s*$)[^\n]*\n?/im);
   if (!trig) return [];
   // Wer ist der/die Verstorbene für die Unterzeichner? („um unsere liebe Mutter“ → Unterzeichner sind Kinder)
   const before = text.slice(0, trig.index);
@@ -1050,13 +1108,19 @@ function obituaryNames(raw, p) {
   const out = [], fam = p.lastName || p.birthName || '';
   let lineNo = 0;
   for (const line of lines.slice(0, 16)) {
-    if (/Trauerfeier|Beerdigung|Beisetzung|Urnen|Abschiedsfeier|findet|statt|Uhr|Friedhof|Kirche|Traueradresse|Anschrift|Kondolenz|Spende|^sowie\b|^und\s+alle|Angehörigen\s+und|^\d/i.test(line)) break;
+    if (/Trauerfeier|Beerdigung|Beisetz|Urnen|Umen|feier\b|anschließend|findet|statt|Uhr|Friedhof|friedhof|Kirche|Traueradresse|Anschrift|Kondolenz|Spende|sowie\b|^\W*\w{0,3}\s*alle\b|Angehörigen|Freunde|^\d/i.test(line)) break;
     let l = line.replace(/\bgeb\.\s*/g, 'geborene ').replace(/\s*\([^)]*\)/g, '')
       .replace(/\s+(?:mit|und|&)\s+Famili\w*|\s+mit\s+allen\s+Angehörigen|\s+im\s+Namen\s+aller\s+Angehörigen/gi, '').replace(/[.:]+$/, '');
     let lineRel = null;
     const lm = l.match(/^(?:Deine?|Eure?|Ihre?|Seine?|Unsere?|Die)?\s*([A-ZÄÖÜ][a-zäöüß]+)\b\s*:?\s*/);
     if (lm && relOfWord(lm[1])) { lineRel = relOfWord(lm[1]); l = l.slice(lm[0].length); }
-    const chunks = l.split(/\s*,\s*|\s+und\s+|\s*&\s*|\s*\+\s*|\s+sowie\s+|\s+mit\s+/).map(c => c.trim()).filter(Boolean);
+    let chunks = l.split(/\s*[,.]\s*|\s+und\s+|\s*&\s*|\s*\+\s*|\s+sowie\s+|\s+mit\s+/).map(c => c.trim().replace(/^[^A-Za-zÄÖÜäöü]+|[^A-Za-zÄÖÜäöüß]+$/g, '')).filter(Boolean);
+    if (OCR_MODE) {   // Lesefehler korrigieren
+      const pools = ocrNamePools();
+      chunks = chunks.map(c => { const w = c.split(/\s+/); w[0] = ocrFixWord(w[0], pools.first); if (w.length === 2 && !pools.first.has(w[1])) w[1] = ocrFixWord(w[1], pools.last); return w.join(' '); });
+    }
+    // „Paul Petra“ (fehlendes Komma) → zwei Personen
+    chunks = chunks.flatMap(c => { const w = c.split(/\s+/); return w.length === 2 && FIRST_SET.has(w[0]) && FIRST_SET.has(w[1]) ? w : [c]; });
     const names = []; let lastFull = '';
     chunks.forEach((c, i) => {
       let rel = lineRel, partner = false, childOf = false;
@@ -1191,21 +1255,17 @@ function addFinding(id, pre = {}) {
     <p class="hint">Text aus einem Google-Treffer oder von einer Webseite: markieren → <b>Kopieren</b> → hier einfügen.
       Tipp: In Chrome geht es noch schneller über <b>Teilen → Stammbaum</b>.
       Bei einer <b>ganzen geteilten Seite</b> kommt nur der Link an – die App liest die Seite dann selbst aus (bei Wikipedia sogar mit fertigen Lebensdaten).</p>
-    <button class="btn" id="fPaste" style="width:100%">📋 Aus Zwischenablage einfügen</button>
+    <div class="two"><button class="btn" id="fPaste">📋 Text einfügen</button><button class="btn" id="fImg">📷 Bild auslesen</button></div>
+    <input type="file" id="fImgIn" accept="image/*" hidden>
+    <div class="hint" id="fOcrMsg"></div>
     <label>Gefundener Text</label><textarea id="fText" placeholder="z. B. „Johann Weber, * 12.3.1850 in Rothenburg, † 1920 …“">${esc(preText)}</textarea>
     <label>Quelle (Link oder Beschreibung)</label><input id="fSrc" value="${esc(pre.url || firstUrl(preText))}" placeholder="z. B. Link zur Seite oder Kirchenbuch St. Jakob 1880, S. 45">
     <label>Wie sicher passt das zu ${esc(p.firstName || 'der Person')}?</label>
     <div class="seg" id="fSure"><button type="button" data-v="sicher">sicher</button><button type="button" data-v="wahrscheinlich" class="on">wahrscheinlich</button><button type="button" data-v="unsicher">unsicher</button></div>
     <button class="btn primary" id="fWiki" style="width:100%;margin-top:12px" hidden>📖 Daten aus Wikipedia holen</button>
     <button class="btn primary" id="fRead" style="width:100%;margin-top:12px" hidden>🌐 Seite / PDF auslesen</button>
-    <div class="research locked" id="fImgHint" hidden>🖼️ <b>Die Anzeige ist vermutlich ein Bild</b> (oder das ist eine Übersichtsseite mit vielen Anzeigen). Bilder kann die App nicht lesen. So geht es:
-      <ol style="margin:6px 0;padding-left:20px">
-        <li>Öffne die Anzeige groß und mach einen <b>Screenshot</b>.</li>
-        <li>Öffne den Screenshot in der <b>Galerie</b> und tippe auf das <b>„T“</b>-Symbol (Text erkennen) – oder nutze <b>Google Lens</b>.</li>
-        <li><b>Alles auswählen → Kopieren</b>.</li>
-        <li>Hier oben auf <b>„📋 Aus Zwischenablage einfügen“</b>.</li>
-      </ol>
-      Die App erkennt dann Daten und die Namen der Trauernden.</div>
+    <div class="research locked" id="fImgHint" hidden>🖼️ <b>Die Anzeige ist vermutlich ein Bild</b> (oder das ist eine Übersichtsseite). Ich versuche, das Bild selbst zu lesen. Klappt das nicht:
+      Anzeige groß öffnen, <b>Screenshot</b> machen, dann hier <b>„📷 Bild auslesen“</b> antippen und den Screenshot wählen – oder den Screenshot aus der Galerie über <b>Teilen → Stammbaum</b> schicken.</div>
     <div id="fSnips"></div>
     <div class="hint" id="fWikiMsg"></div>
     <button class="btn primary" id="fParse" style="width:100%;margin-top:12px">🔍 Daten im Text erkennen</button>
@@ -1228,7 +1288,9 @@ function addFinding(id, pre = {}) {
     if (!wiki && pageText && T() === lastSnippet.trim()) relText = pageText.slice(Math.max(0, snipPos - 300), snipPos + 2500);
     const trg = relText.search(/In\s+(?:Liebe|stiller\s+Trauer|tiefer\s+Trauer|Dankbarkeit)|Es\s+trauern/i);
     if (trg >= 0) { const stop = relText.slice(trg).search(/Trauerfeier|Beerdigung|Beisetzung|Urnenbeisetzung|Weitere Anzeige|Traueradresse|Kondolenz/i); if (stop > 0) relText = relText.slice(0, trg + stop); }
+    OCR_MODE = !!lastOcr && T() === lastOcr;
     const relItems = extractRelatives(relText, p);
+    OCR_MODE = false;
     // Sicherheitsnetz: alle weiteren Namen im Text (Verwandtschaft unbekannt, nicht vorab angehakt)
     (listPage && T() === lastSnippet.trim() ? [] : namesInText(relText, p)).forEach(({ name, guessed, first }) => {
       const r = parseSpoken(name);
@@ -1282,7 +1344,45 @@ function addFinding(id, pre = {}) {
   const rBtn = dlg.querySelector('#fRead'), snipBox = dlg.querySelector('#fSnips');
   const isUrl = u => /^https?:\/\//i.test(u);
   let pageText = '', snipPos = 0, lastSnippet = '', listPage = false;
-  const imageHint = dlg.querySelector('#fImgHint');   // ganzer Seitentext (für Verwandte/Traueranzeigen weiter unten)
+  const imageHint = dlg.querySelector('#fImgHint');
+  // ---- Bild auslesen (Texterkennung im Handy) ----
+  let lastOcr = '';
+  const ocrMsg = dlg.querySelector('#fOcrMsg');
+  const runOcr = async (blob, label) => {
+    ocrMsg.innerHTML = '<div class="research open">⏳ Lese ' + (label || 'das Bild') + ' … <span id="ocrPct"></span><br><small>Beim ersten Mal wird die Texterkennung geladen (ca. 4 MB), das dauert etwas.</small></div>';
+    ocrMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    try {
+      const txt = await ocrImage(blob, m => { const e = dlg.querySelector('#ocrPct'); if (e && m.progress != null) e.textContent = (m.status === 'recognizing text' ? 'Text erkennen: ' : 'Vorbereiten: ') + Math.round(m.progress * 100) + ' %'; });
+      if (!txt.trim()) { ocrMsg.innerHTML = '<div class="research locked">Im Bild wurde kein Text gefunden.</div>'; return false; }
+      lastOcr = txt.trim(); dlg.querySelector('#fText').value = lastOcr; wiki = null;
+      ocrMsg.innerHTML = '<div class="research open">✓ Text aus dem Bild gelesen. Bitte die Vorschläge prüfen – bei Schreibschrift sind Namen und Daten nicht immer richtig.</div>';
+      parse(); dlg.querySelector('#fOut').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return true;
+    } catch (e) {
+      console.warn('ocr', e);
+      ocrMsg.innerHTML = '<div class="research locked">Die Texterkennung konnte nicht geladen werden (Internet nötig beim ersten Mal). Bitte später noch einmal versuchen.</div>';
+      return false;
+    }
+  };
+  dlg.querySelector('#fImg').onclick = () => dlg.querySelector('#fImgIn').click();
+  dlg.querySelector('#fImgIn').onchange = e => { const f = e.target.files[0]; if (f) runOcr(f, 'den Screenshot'); };
+  // Bild auf der gelesenen Seite selbst suchen und lesen (z. B. Traueranzeige als Bild)
+  const ocrPageImages = async imgs => {
+    for (const u of imgs.slice(0, 3)) {
+      try {
+        let r = await fetchTimeout(u, {}, 20000).catch(() => null);
+        if (!r || !r.ok) r = await fetchTimeout('https://api.allorigins.win/raw?url=' + encodeURIComponent(u), {}, 25000);
+        if (!r.ok) continue;
+        const blob = await r.blob(); if (blob.size < 15000 || !/image/.test(blob.type || 'image')) continue;
+        if (await runOcr(blob, 'das Bild der Anzeige')) {
+          // passt das Bild? (Name der Person oder typische Wörter einer Anzeige)
+          const ln = (p.lastName || p.birthName || '').toLowerCase();
+          if ((ln && lastOcr.toLowerCase().includes(ln)) || /trauer|abschied|†|\*\s*\d/i.test(lastOcr)) return true;
+        }
+      } catch (e) { console.warn('img', e); }
+    }
+    return false;
+  };   // ganzer Seitentext (für Verwandte/Traueranzeigen weiter unten)
   const useSnippet = x => { lastSnippet = x.text.replace(/^… | …$/g, ''); snipPos = x.start; dlg.querySelector('#fText').value = lastSnippet; wiki = null; parse(); };
   const readUrl = async () => {
     imageHint.hidden = true;
@@ -1290,12 +1390,15 @@ function addFinding(id, pre = {}) {
     rBtn.disabled = true; snipBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
     try {
       const text = await readPage(SRC());
+      const pageImages = lastPageImages.slice();
       const sn = findSnippets(p, text);
       pageText = text;
       // Übersichtsseite (viele Anzeigen) oder Anzeige als Bild? Dann gibt es keinen lesbaren Anzeigentext
       listPage = (text.match(/Traueranzeigen?\s+von\s/gi) || []).length >= 3 || /share\.google|google\.[a-z.]+\/(search|imgres)/i.test(SRC());
       const hasDates = sn.some(x => /\d{1,2}\.\s?\d{1,2}\.\s?\d{4}|[*†]\s*\d/.test(x.text));
       imageHint.hidden = !(listPage || !hasDates);
+      if (!imageHint.hidden && pageImages.length && !listPage) { await ocrPageImages(pageImages); return; }
+      if (!sn.length && lastPageImages.length) { snipBox.innerHTML = ''; imageHint.hidden = false; await ocrPageImages(lastPageImages.slice()); return; }
       if (!sn.length) {
         snipBox.innerHTML = `<div class="research locked">Der Name ${esc(p.lastName || p.birthName || '')} kommt auf der Seite nicht vor (oder die Seite ist ein Bild/Scan).` + (prot ? '' : ' Tipp: „🤖 Lieber von Claude prüfen lassen“.') + '</div>';
         return;
@@ -1344,7 +1447,8 @@ function addFinding(id, pre = {}) {
   };
   // Geteilte Seite ohne markierten Text → automatisch auslesen
   const onlyTitle = !pre.text || pre.text.length < 80;
-  if (wikiFromUrl(SRC())) loadWiki();
+  if (pre.image) runOcr(pre.image, 'das geteilte Bild');
+  else if (wikiFromUrl(SRC())) loadWiki();
   else if (isUrl(SRC()) && pre.url && onlyTitle) readUrl().then(() => rBtn.disabled = false);
   else if (preText) parse();
 }
@@ -1359,7 +1463,7 @@ function pickPersonFor(pre) {
   const recent = named.concat([P(sheetId), P(data.focusId)].filter(Boolean));
   const dlg = openModal(`
     <h2>📥 Geteilter Fund</h2>
-    <div class="note" style="font-size:.85rem;max-height:120px;overflow:auto">${esc([pre.title, pre.text, pre.url].filter(Boolean).join('\n'))}</div>
+    <div class="note" style="font-size:.85rem;max-height:120px;overflow:auto">${pre.image ? '🖼️ Bild (wird nach der Auswahl automatisch gelesen)\n' : ''}${esc([pre.title, pre.text, pre.url].filter(Boolean).join('\n'))}</div>
     <label>Zu welcher Person gehört das?</label>
     <input id="pSearch" type="search" placeholder="🔍 Name suchen …">
     <div id="pList" style="margin-top:8px"></div>
@@ -1373,10 +1477,16 @@ function pickPersonFor(pre) {
   dlg.querySelector('#pList').onclick = e => { const r = e.target.closest('[data-pick]'); if (r) addFinding(r.dataset.pick, pre); };
   dlg.querySelector('#cancel').onclick = closeModal;
 }
-function checkShared() {
+async function checkShared() {
   const q = new URLSearchParams(location.search);
   const pre = { title: q.get('share_title') || '', text: q.get('share_text') || '', url: q.get('share_url') || '' };
-  if (!pre.title && !pre.text && !pre.url) return;
+  if (q.get('share_image')) {   // geteiltes Bild aus dem Zwischenspeicher holen
+    try {
+      const c = await caches.open('stammbaum-share'), key = new URL('shared-image', location.href).href;
+      const r = await c.match(key); if (r) { pre.image = await r.blob(); await c.delete(key); }
+    } catch (e) {}
+  }
+  if (!pre.title && !pre.text && !pre.url && !pre.image) return;
   history.replaceState(null, '', location.pathname);
   // Chrome schickt den Link manchmal im Text mit
   if (!pre.url) { const m = pre.text.match(/https?:\/\/[^\s]+/); if (m) { pre.url = m[0]; pre.text = pre.text.replace(m[0], '').trim(); } }

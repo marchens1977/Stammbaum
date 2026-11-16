@@ -129,6 +129,18 @@
   .partner-row { display: flex; align-items: center; justify-content: space-between; background: #f3ead4; border-radius: 10px; padding: 6px 10px; margin-bottom: 6px; }
   .partner-row button { background: none; border: none; color: #a33; font-size: 1.1rem; }
   [hidden] { display: none !important; }
+  .seg { display: flex; gap: 6px; }
+  .seg button { flex: 1; padding: 10px 4px; border-radius: 10px; border: 1px solid #c8b895; background: #fff; color: var(--ink); font-size: .95rem; }
+  .seg button.on { background: var(--green); border-color: var(--green); color: #fff; }
+  .two.dates { grid-template-columns: 1.15fr 1fr; }
+  .datewrap { display: flex; gap: 6px; position: relative; }
+  .datewrap input[name] { flex: 1; min-width: 0; }
+  .calbtn { flex: none; width: 46px; border-radius: 10px; border: 1px solid #c8b895; background: #fff; font-size: 1.2rem; }
+  .hiddendate { position: absolute; right: 0; bottom: 0; width: 46px !important; height: 1px; opacity: 0; pointer-events: none; padding: 0 !important; border: 0 !important; }
+  .datehint { font-size: .8rem; color: var(--green2); min-height: 1.1em; margin-top: 3px; }
+  .datehint.free { color: var(--muted); }
+  details.more { margin-top: 16px; border-top: 1px solid #eadfc4; padding-top: 6px; }
+  details.more summary { cursor: pointer; color: var(--green); font-weight: 600; padding: 8px 0; }
 </style>
 </head>
 <body>
@@ -502,49 +514,143 @@ function personOptions(selected, exclude) {
     .map(p => `<option value="${p.id}"${p.id === selected ? ' selected' : ''}>${esc(fullName(p))}${lifeSpan(p) ? ' (' + esc(lifeSpan(p)) + ')' : ''}</option>`).join('');
 }
 
-// Personen-Formular: id = vorhandene Person, sonst neue Person (preset = Vorbelegung, onCreate = Verknüpfung)
-function personForm(id, preset = {}, onCreate = null, title = null) {
+// ---- Datum: verschiedene Schreibweisen erkennen und einheitlich machen ----
+const MONTHS_DE = ['januar', 'februar', 'märz', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'dezember'];
+function monthIndex(w) {
+  w = w.toLowerCase().replace('ä', 'a').replace(/\.$/, '');
+  return MONTHS_DE.findIndex(m => m.replace('ä', 'a').startsWith(w.slice(0, 3)) && w.length >= 3);
+}
+function normDate(s) {
+  s = String(s || '').trim().replace(/\s+/g, ' '); if (!s) return '';
+  const two = n => String(n).padStart(2, '0');
+  const ok = (d, m, y) => d >= 1 && d <= 31 && m >= 1 && m <= 12 && y >= 1000 && y <= THIS_YEAR + 1;
+  let m;
+  if ((m = s.match(/^(?:um|ca\.?|circa|etwa|ungefähr|~)\s*(\d{4})$/i))) return 'um ' + m[1];
+  if ((m = s.match(/^(vor|nach)\s*(\d{4})$/i))) return m[1].toLowerCase() + ' ' + m[2];
+  if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)) && ok(+m[3], +m[2], +m[1])) return `${two(m[3])}.${two(m[2])}.${m[1]}`;
+  if ((m = s.match(/^(\d{1,2})[.\s/-]+(\d{1,2})[.\s/-]+(\d{4})$/)) && ok(+m[1], +m[2], +m[3])) return `${two(m[1])}.${two(m[2])}.${m[3]}`;
+  if ((m = s.match(/^(\d{2})(\d{2})(\d{4})$/)) && ok(+m[1], +m[2], +m[3])) return `${m[1]}.${m[2]}.${m[3]}`;
+  if ((m = s.match(/^(\d{1,2})\.?\s*([a-zäA-ZÄ]{3,}\.?)\s*(\d{4})$/)) && monthIndex(m[2]) >= 0 && ok(+m[1], monthIndex(m[2]) + 1, +m[3])) return `${two(m[1])}.${two(monthIndex(m[2]) + 1)}.${m[3]}`;
+  if ((m = s.match(/^([a-zäA-ZÄ]{3,}\.?)\s*(\d{4})$/)) && monthIndex(m[1]) >= 0) return `${two(monthIndex(m[1]) + 1)}.${m[2]}`;
+  if ((m = s.match(/^(\d{1,2})[./](\d{4})$/)) && +m[1] >= 1 && +m[1] <= 12) return `${two(m[1])}.${m[2]}`;
+  return s;
+}
+// Lesbare Anzeige, z. B. „17. Juni 1880“
+function prettyDate(s) {
+  let m; const M = MONTHS_DE.map(x => x[0].toUpperCase() + x.slice(1));
+  if ((m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/)) && +m[2] >= 1 && +m[2] <= 12 && +m[1] >= 1 && +m[1] <= 31) return `${+m[1]}. ${M[+m[2] - 1]} ${m[3]}`;
+  if ((m = s.match(/^(\d{2})\.(\d{4})$/)) && +m[1] >= 1 && +m[1] <= 12) return `${M[+m[1] - 1]} ${m[2]}`;
+  if (/^(\d{4}|um \d{4}|vor \d{4}|nach \d{4})$/.test(s)) return s;
+  return null;
+}
+// Vorschläge aus den schon eingetragenen Personen (für weniger Tipparbeit)
+function suggestions(fields) {
+  const set = new Set();
+  Object.values(data.persons).forEach(p => fields.forEach(f => {
+    const v = String(p[f] || '').trim(); if (v.length > 1) set.add(v);
+  }));
+  return [...set].sort((a, b) => a.localeCompare(b, 'de')).map(v => `<option value="${esc(v)}">`).join('');
+}
+
+// Personen-Formular: id = vorhandene Person, sonst neue Person
+// preset = Vorbelegung, onCreate = Verknüpfung, again = Knopf „Speichern + noch eins“
+function personForm(id, preset = {}, onCreate = null, title = null, again = null) {
   const isNew = !id;
   const p = isNew ? newPerson(preset) : JSON.parse(JSON.stringify(P(id)));
-  const sel = (v, opts) => opts.map(([k, l]) => `<option value="${k}"${v === k ? ' selected' : ''}>${l}</option>`).join('');
+  const seg = (name, val, opts) => `<div class="seg" data-seg="${name}">${opts.map(([k, l]) =>
+    `<button type="button" data-v="${k}" class="${val === k ? 'on' : ''}">${l}</button>`).join('')}</div><input type="hidden" name="${name}" value="${esc(val)}">`;
+  const dateField = (name, val, ph) => `
+    <div class="datewrap">
+      <input name="${name}" value="${esc(val)}" placeholder="${ph}" autocomplete="off">
+      <button type="button" class="calbtn" data-cal="${name}" aria-label="Kalender">📅</button>
+      <input type="date" class="hiddendate" data-for="${name}" min="1500-01-01">
+    </div><div class="datehint" data-hint="${name}"></div>`;
+  const moreOpen = !isNew && (p.occupation || p.notes || p.sources || p.photo || p.father || p.mother || p.spouses.length);
   const dlg = openModal(`
     <h2>${title || (isNew ? 'Neue Person' : 'Person bearbeiten')}</h2>
+    <datalist id="dl-first">${suggestions(['firstName'])}</datalist>
+    <datalist id="dl-last">${suggestions(['lastName', 'birthName'])}</datalist>
+    <datalist id="dl-place">${suggestions(['birthPlace', 'deathPlace'])}</datalist>
+    <datalist id="dl-job">${suggestions(['occupation'])}</datalist>
     <div class="two">
-      <div><label>Vorname(n)</label><input name="firstName" value="${esc(p.firstName)}"></div>
-      <div><label>Nachname</label><input name="lastName" value="${esc(p.lastName)}"></div>
+      <div><label>Vorname(n)</label><input name="firstName" value="${esc(p.firstName)}" list="dl-first" autocomplete="off" autocapitalize="words"></div>
+      <div><label>Nachname</label><input name="lastName" value="${esc(p.lastName)}" list="dl-last" autocomplete="off" autocapitalize="words"></div>
     </div>
-    <div class="two">
-      <div><label>Geburtsname</label><input name="birthName" value="${esc(p.birthName)}" placeholder="falls anders"></div>
-      <div><label>Geschlecht</label><select name="gender">${sel(p.gender, [['m', 'männlich'], ['w', 'weiblich'], ['d', 'divers'], ['u', 'unbekannt']])}</select></div>
+    <label>Geburtsname <small>(z. B. Mädchenname, nur falls anders)</small></label>
+    <input name="birthName" value="${esc(p.birthName)}" list="dl-last" autocomplete="off" autocapitalize="words">
+    <label>Geschlecht</label>
+    ${seg('gender', p.gender, [['m', '♂ Mann'], ['w', '♀ Frau'], ['d', 'divers'], ['u', '?']])}
+    <div class="two dates">
+      <div><label>Geburtsdatum</label>${dateField('birthDate', p.birthDate, 'z. B. 17.6.1880')}</div>
+      <div><label>Geburtsort</label><input name="birthPlace" value="${esc(p.birthPlace)}" list="dl-place" autocomplete="off" autocapitalize="words"></div>
     </div>
     <label>Lebt diese Person noch?</label>
-    <select name="status">${sel(p.status, [['lebt', 'Ja, lebt'], ['verstorben', 'Nein, verstorben'], ['unbekannt', 'Weiß ich nicht']])}</select>
-    <div class="two">
-      <div><label>Geburtsdatum</label><input name="birthDate" value="${esc(p.birthDate)}" placeholder="z. B. 12.03.1890 oder um 1890"></div>
-      <div><label>Geburtsort</label><input name="birthPlace" value="${esc(p.birthPlace)}"></div>
+    ${seg('status', p.status, [['lebt', 'Ja'], ['verstorben', 'Nein'], ['unbekannt', 'Weiß nicht']])}
+    <div class="two dates" id="deathRow">
+      <div><label>Sterbedatum</label>${dateField('deathDate', p.deathDate, 'z. B. um 1944')}</div>
+      <div><label>Sterbeort</label><input name="deathPlace" value="${esc(p.deathPlace)}" list="dl-place" autocomplete="off" autocapitalize="words"></div>
     </div>
-    <div class="two">
-      <div><label>Sterbedatum</label><input name="deathDate" value="${esc(p.deathDate)}"></div>
-      <div><label>Sterbeort</label><input name="deathPlace" value="${esc(p.deathPlace)}"></div>
-    </div>
-    <label>Beruf</label><input name="occupation" value="${esc(p.occupation)}">
-    <div class="two">
-      <div><label>Vater</label><select name="father">${personOptions(p.father, p.id)}</select></div>
-      <div><label>Mutter</label><select name="mother">${personOptions(p.mother, p.id)}</select></div>
-    </div>
-    ${!isNew && p.spouses.length ? `<label>Partner/in</label><div id="partners">${p.spouses.map(s => P(s) ? `<div class="partner-row" data-sp="${s}"><span>${esc(fullName(P(s)))}</span><button type="button" data-unlink="${s}" title="Verbindung lösen">✕</button></div>` : '').join('')}</div>` : ''}
-    <label>Notizen</label><textarea name="notes" placeholder="Was man über die Person weiß, Geschichten, Erinnerungen …">${esc(p.notes)}</textarea>
-    <label>Quellen</label><textarea name="sources" placeholder="Woher stammt die Info? z. B. Kirchenbuch St. Martin 1890, Seite 12 – oder ein Link">${esc(p.sources)}</textarea>
-    <label>Foto</label>
-    <div style="display:flex;gap:10px;align-items:center">
-      <span id="photoPrev">${avatarHTML(p)}</span>
-      <input type="file" accept="image/*" id="photoIn" style="flex:1">
-      ${p.photo ? '<button type="button" class="btn" id="photoDel">Entfernen</button>' : ''}
-    </div>
+    <details class="more"${moreOpen ? ' open' : ''}>
+      <summary>Mehr Angaben (Beruf, Eltern, Notizen, Quellen, Foto)</summary>
+      <label>Beruf</label><input name="occupation" value="${esc(p.occupation)}" list="dl-job" autocomplete="off">
+      <div class="two">
+        <div><label>Vater</label><select name="father">${personOptions(p.father, p.id)}</select></div>
+        <div><label>Mutter</label><select name="mother">${personOptions(p.mother, p.id)}</select></div>
+      </div>
+      ${!isNew && p.spouses.length ? `<label>Partner/in</label><div id="partners">${p.spouses.map(s => P(s) ? `<div class="partner-row"><span>${esc(fullName(P(s)))}</span><button type="button" data-unlink="${s}" title="Verbindung lösen">✕</button></div>` : '').join('')}</div>` : ''}
+      <label>Notizen</label><textarea name="notes" placeholder="Was man über die Person weiß, Geschichten, Erinnerungen …">${esc(p.notes)}</textarea>
+      <label>Quellen</label><textarea name="sources" placeholder="Woher stammt die Info? z. B. Kirchenbuch St. Martin 1890, Seite 12 – oder ein Link">${esc(p.sources)}</textarea>
+      <label>Foto</label>
+      <div style="display:flex;gap:10px;align-items:center">
+        <span id="photoPrev">${avatarHTML(p)}</span>
+        <input type="file" accept="image/*" id="photoIn" style="flex:1">
+        ${p.photo ? '<button type="button" class="btn" id="photoDel">Entfernen</button>' : ''}
+      </div>
+    </details>
     <div class="actions">
       <button class="btn" id="cancel">Abbrechen</button>
       <button class="btn primary" id="ok">💾 Speichern</button>
+      ${again ? `<button class="btn wide" id="again">💾 Speichern + ${again.label}</button>` : ''}
     </div>`);
+  const field = n => dlg.querySelector(`[name="${n}"]`);
+
+  // Auswahl-Knöpfe (Geschlecht, Lebt noch?)
+  const setSeg = (name, v) => {
+    field(name).value = v;
+    dlg.querySelectorAll(`[data-seg="${name}"] button`).forEach(b => b.classList.toggle('on', b.dataset.v === v));
+    if (name === 'status') dlg.querySelector('#deathRow').hidden = v === 'lebt';
+  };
+  dlg.querySelectorAll('[data-seg] button').forEach(b => b.onclick = () => setSeg(b.parentElement.dataset.seg, b.dataset.v));
+  setSeg('status', p.status);
+
+  // Datumsfelder: Hinweis anzeigen, beim Verlassen vereinheitlichen, Kalender-Knopf
+  const showHint = n => {
+    const v = normDate(field(n).value), h = dlg.querySelector(`[data-hint="${n}"]`);
+    const pr = v && prettyDate(v);
+    h.textContent = !v ? '' : pr ? '✓ ' + pr : 'wird als Text gespeichert';
+    h.className = 'datehint' + (v && !pr ? ' free' : '');
+  };
+  ['birthDate', 'deathDate'].forEach(n => {
+    field(n).addEventListener('input', () => showHint(n));
+    field(n).addEventListener('blur', () => {
+      field(n).value = normDate(field(n).value); showHint(n);
+      const by = yearOf(field('birthDate').value);
+      if (n === 'deathDate' && field(n).value && field('status').value !== 'verstorben') setSeg('status', 'verstorben');
+      if (n === 'birthDate' && by && by < THIS_YEAR - 110 && field('status').value === 'unbekannt') setSeg('status', 'verstorben');
+    });
+    showHint(n);
+  });
+  dlg.querySelectorAll('[data-cal]').forEach(b => b.onclick = () => {
+    const n = b.dataset.cal, hd = dlg.querySelector(`.hiddendate[data-for="${n}"]`);
+    const m = normDate(field(n).value).match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    hd.value = m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+    try { hd.showPicker(); } catch (e) { hd.focus(); hd.click(); }
+  });
+  dlg.querySelectorAll('.hiddendate').forEach(hd => hd.onchange = () => {
+    if (!hd.value) return; const n = hd.dataset.for;
+    field(n).value = normDate(hd.value); field(n).dispatchEvent(new Event('blur'));
+  });
+
   const unlinked = new Set();
   dlg.querySelectorAll('[data-unlink]').forEach(b => b.onclick = () => { unlinked.add(b.dataset.unlink); b.parentElement.remove(); });
   dlg.querySelector('#photoIn').onchange = async e => {
@@ -555,11 +661,14 @@ function personForm(id, preset = {}, onCreate = null, title = null) {
   const del = dlg.querySelector('#photoDel');
   if (del) del.onclick = () => { p.photo = ''; dlg.querySelector('#photoPrev').innerHTML = avatarHTML(p); del.remove(); };
   dlg.querySelector('#cancel').onclick = closeModal;
-  dlg.querySelector('#ok').onclick = () => {
+
+  const doSave = () => {
     dlg.querySelectorAll('[name]').forEach(el => { p[el.name] = el.value.trim(); });
+    p.birthDate = normDate(p.birthDate); p.deathDate = normDate(p.deathDate);
     p.father = p.father || null; p.mother = p.mother || null;
-    if (!p.firstName && !p.lastName) { alert('Bitte mindestens einen Vor- oder Nachnamen eingeben.'); return; }
-    if (p.deathDate && p.status === 'lebt') p.status = 'verstorben';
+    if (!p.firstName && !p.lastName) { alert('Bitte mindestens einen Vor- oder Nachnamen eingeben.'); return false; }
+    if (p.status === 'lebt') { p.deathDate = ''; p.deathPlace = ''; }
+    else if (p.deathDate || p.deathPlace) p.status = 'verstorben';
     unlinked.forEach(s => { p.spouses = p.spouses.filter(x => x !== s); if (P(s)) P(s).spouses = P(s).spouses.filter(x => x !== p.id); });
     data.persons[p.id] = p;
     if (isNew) {
@@ -568,8 +677,14 @@ function personForm(id, preset = {}, onCreate = null, title = null) {
       if (onCreate) onCreate(p.id);
     }
     save(); closeModal(); refresh();
-    if (!isNew || sheetId) openDetail(isNew ? (sheetId || p.id) : p.id);
+    return true;
   };
+  dlg.querySelector('#ok').onclick = () => {
+    if (doSave() && (!isNew || sheetId)) openDetail(isNew ? (sheetId || p.id) : p.id);
+  };
+  const ag = dlg.querySelector('#again');
+  if (ag) ag.onclick = () => { if (doSave()) personForm(null, again.preset, onCreate, title, again); };
+  if (isNew) setTimeout(() => field(p.lastName && !p.firstName ? 'firstName' : 'firstName').focus(), 50);
 }
 
 function shrinkPhoto(file) {
@@ -603,12 +718,17 @@ function link(baseId, kind, otherId) {
 function addRelative(baseId, kind) {
   const b = P(baseId); if (!b) return;
   const preset = {};
-  if (kind === 'father') { preset.gender = 'm'; preset.lastName = b.lastName; }
-  if (kind === 'mother') preset.gender = 'w';
+  const fam = b.birthName && b.gender === 'w' ? b.birthName : b.lastName;   // Familienname der Eltern
+  if (kind === 'father') { preset.gender = 'm'; preset.lastName = fam; preset.status = 'unbekannt'; }
+  if (kind === 'mother') { preset.gender = 'w'; preset.lastName = fam; }
   if (kind === 'child') preset.lastName = b.lastName;
-  if (kind === 'spouse') preset.gender = b.gender === 'm' ? 'w' : b.gender === 'w' ? 'm' : 'u';
+  if (kind === 'spouse') { preset.gender = b.gender === 'm' ? 'w' : b.gender === 'w' ? 'm' : 'u'; if (b.gender === 'm') preset.lastName = b.lastName; }
+  // Wer ein Elternteil oder Partner von jemandem ist, der vor über 110 Jahren geboren wurde, ist sicher verstorben
+  const by = yearOf(b.birthDate);
+  if (by && by < THIS_YEAR - 110 && kind !== 'child') preset.status = 'verstorben';
   const title = `${KIND[kind]} von ${esc(fullName(b))}`;
-  const startNew = () => personForm(null, preset, id => link(baseId, kind, id), 'Neu: ' + title);
+  const again = kind === 'child' ? { label: 'noch ein Kind', preset } : null;
+  const startNew = () => personForm(null, preset, id => link(baseId, kind, id), 'Neu: ' + title, again);
   const others = sortedPersons().filter(p => p.id !== baseId);
   if (!others.length) return startNew();
   const dlg = openModal(`

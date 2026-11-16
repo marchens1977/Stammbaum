@@ -13,6 +13,7 @@ keine App für Dritte, keine Stammbäume über fremde Personen.
   (Kartengröße, Anzahl Generationen, Schutzgrenze `PROTECT_YEARS`).
 - Daten liegen im Browser (localStorage, Schlüssel `stammbaum-daten-v1`), **nie im Repository**.
 - Sicherung: JSON-Datei; Austausch: GEDCOM 5.5.1 (Export + Import).
+- Datumsfelder bleiben Freitext (für „um 1890“ usw.), werden aber vereinheitlicht (`normDate`): TT.MM.JJJJ, MM.JJJJ, JJJJ, „um/vor/nach JJJJ“.
 
 ## 2. Wichtige Regeln und Entscheidungen
 - **Datenschutz:** Keine Familiendaten, Sicherungen oder GEDCOM-Dateien ins Repository hochladen.
@@ -25,13 +26,14 @@ keine App für Dritte, keine Stammbäume über fremde Personen.
 | Datum | Was |
 |---|---|
 | 2026-11-16 | Stufe 1: Erfassen, Baum-Ansicht, Detailansicht, Liste, Schutz Lebender, Sicherung, GEDCOM, Beispiel-Familie |
+| 2026-11-16 | Einfachere Eingabe: Kalender-Knopf + Freitext-Datum mit Erkennung (z. B. 17061880, „17. Juni 1880“, „ca 1890“), Vorschläge für Namen/Orte/Berufe, Tipp-Knöpfe für Geschlecht und „Lebt noch?“, „Mehr Angaben“ eingeklappt, „Speichern + noch ein Kind“, sinnvolle Vorbelegungen |
 
 ## 4. Nächste Schritte
 - **Stufe 2:** Recherche-Knopf ohne Kosten (öffnet FamilySearch, Matricula, CompGen, Volksbund usw.
   mit vorausgefülltem Namen; erzeugt fertigen Text für die Claude-App) – nur für ungeschützte Personen.
 - **Stufe 3:** Echte KI-Recherche (Claude-API mit Websuche), Schlüssel nie in der öffentlichen Seite –
   über Raspberry Pi oder nur lokal eingegeben.
-- Weitere Ideen: Fotos größer ansehen, Ereignisse (Hochzeit, Umzug), Druckansicht.
+- Weitere Ideen: Spracheingabe für eine ganze Person, Fotos größer ansehen, Ereignisse (Hochzeit, Umzug), Druckansicht.
 
 ## 5. Zusammenarbeit
 - Nutzer ist **Programmier-Laie**: einfaches Deutsch, Fachbegriffe kurz erklären.

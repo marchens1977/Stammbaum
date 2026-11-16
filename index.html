@@ -129,6 +129,12 @@
   .partner-row { display: flex; align-items: center; justify-content: space-between; background: #f3ead4; border-radius: 10px; padding: 6px 10px; margin-bottom: 6px; }
   .partner-row button { background: none; border: none; color: #a33; font-size: 1.1rem; }
   [hidden] { display: none !important; }
+  .phototip { font-size: .88rem; margin-top: 8px; } .phototip summary { color: var(--green); font-weight: 600; cursor: pointer; } .phototip ol { margin: 6px 0; padding-left: 20px; }
+  label.sug { display: flex; gap: 10px; align-items: flex-start; background: #fff; border: 1px solid #d8c9a3; border-radius: 12px; padding: 10px; margin: 0 0 8px; color: var(--ink); font-size: .95rem; }
+  label.sug input { width: 22px; height: 22px; flex: none; margin-top: 2px; }
+  label.sug a { color: var(--green); word-break: break-all; }
+  .warn { color: #a33; font-size: .85rem; }
+  .sure-sicher { color: #2e7d32; font-weight: 600; } .sure-wahrscheinlich { color: #b07d10; font-weight: 600; } .sure-unsicher { color: #a33; font-weight: 600; }
   .google-btn { display: block; text-align: center; text-decoration: none; margin-top: 10px; background: #fff; }
   .research-btn { width: 100%; margin-top: 14px; padding: 13px; font-size: 1rem; }
   .srclist { display: flex; flex-direction: column; gap: 8px; }
@@ -583,7 +589,19 @@ Bitte beachte:
 3. Erfinde nichts. Wenn du nichts findest, sag es.
 4. Recherchiere nicht zu lebenden Personen.
 5. Sag mir zum Schluss, wo ich selbst weitersuchen kann (z. B. welche Pfarrei/welches Standesamt/Archiv für den Ort und die Zeit zuständig ist und ob die Kirchenbücher online sind).
-6. Wenn du neue Verwandte findest (Eltern, Geschwister, Ehepartner), liste sie am Ende kurz mit Lebensdaten auf.`;
+6. Schreib ganz am Ende eine Zusammenfassung GENAU in diesem Format (nur Zeilen, zu denen du etwas gefunden hast; Sicherheit = sicher, wahrscheinlich oder unsicher; Daten als TT.MM.JJJJ, JJJJ oder „um JJJJ“):
+
+### STAMMBAUM-DATEN
+GEBURT: TT.MM.JJJJ in Ort | Sicherheit | Quelle mit Link
+TOD: TT.MM.JJJJ in Ort | Sicherheit | Quelle mit Link
+BERUF: Beruf | Sicherheit | Quelle mit Link
+GEBURTSNAME: Name | Sicherheit | Quelle mit Link
+VATER: Vorname Nachname, geboren TT.MM.JJJJ in Ort, gestorben TT.MM.JJJJ in Ort | Sicherheit | Quelle mit Link
+MUTTER: Vorname Nachname geborene Mädchenname, geboren …, gestorben … | Sicherheit | Quelle mit Link
+EHEPARTNER: (gleiches Format wie VATER)
+KIND: (gleiches Format, eine Zeile pro Kind)
+GESCHWISTER: (gleiches Format, eine Zeile pro Bruder/Schwester)
+### ENDE`;
 }
 function openResearch(id) {
   const p = P(id); if (!p) return;
@@ -602,7 +620,10 @@ function openResearch(id) {
     <p class="hint" style="font-size:.9rem">Beim Antippen wird der Name <b>${esc([p.firstName, p.birthName || p.lastName].filter(Boolean).join(' '))}</b> kopiert. Falls das Suchfeld auf der Seite leer ist: lange ins Feld tippen → <i>Einfügen</i>.</p>
     <div class="srclist">${top.map(item).join('')}</div>
     ${more.length ? `<details><summary class="hint" style="padding:8px 0">Weitere Quellen (${more.length})</summary><div class="srclist">${more.map(item).join('')}</div></details>` : ''}
-    <h3>📝 Etwas gefunden?</h3>
+    <h3>📥 Claudes Antwort übernehmen</h3>
+    <p class="hint" style="font-size:.9rem">Wenn Claude geantwortet hat: Antwort kopieren und hier einfügen – die Funde erscheinen als Vorschläge zum Abhaken.</p>
+    <button class="btn primary" id="impClaude" style="width:100%">📥 Claude-Antwort einfügen</button>
+    <h3>📝 Selbst etwas gefunden?</h3>
     <button class="btn" id="addFind" style="width:100%">Fund eintragen</button>
     <div class="actions"><button class="btn wide" id="close">Schließen</button></div>
     <div class="toast" id="toast" hidden></div>`);
@@ -617,7 +638,143 @@ function openResearch(id) {
     copyText([p.firstName, p.birthName || p.lastName].filter(Boolean).join(' ')); toast('✓ Name kopiert');
   }));
   dlg.querySelector('#addFind').onclick = () => addFinding(id);
+  dlg.querySelector('#impClaude').onclick = () => importClaude(id);
 }
+// ---- Claude-Antwort übernehmen: Datenblock auswerten und als Vorschläge zum Abhaken zeigen ----
+function parseClaudeBlock(text) {
+  const m = String(text || '').match(/STAMMBAUM-DATEN([\s\S]*?)(?:#*\s*ENDE\b|$)/i);
+  if (!m) return null;
+  const items = [];
+  m[1].split(/\r?\n/).forEach(line => {
+    line = line.replace(/\*\*/g, '').replace(/`/g, '').replace(/^[\s>*\-•]+/, '').trim();
+    const mm = line.match(/^([A-Za-zÄÖÜäöü]+)\s*:\s*(.+)$/); if (!mm) return;
+    const parts = mm[2].split('|').map(x => x.trim());
+    items.push({ key: mm[1].toUpperCase(), value: parts[0], sure: (parts[1] || '').toLowerCase(), source: parts.slice(2).join(' | ') });
+  });
+  return items;
+}
+const ROLE = { VATER: 'father', MUTTER: 'mother', EHEPARTNER: 'spouse', EHEPARTNERIN: 'spouse', PARTNER: 'spouse', KIND: 'child', GESCHWISTER: 'sibling', BRUDER: 'sibling', SCHWESTER: 'sibling' };
+const FIELD_LABEL = { birthDate: 'Geburtsdatum', birthPlace: 'Geburtsort', deathDate: 'Sterbedatum', deathPlace: 'Sterbeort', occupation: 'Beruf', birthName: 'Geburtsname' };
+function sameName(a, b) {
+  const k = s => koelner(String(s || '').split(/\s+/)[0]);
+  const lastA = [a.lastName, a.birthName].filter(Boolean).map(koelner), lastB = [b.lastName, b.birthName].filter(Boolean).map(koelner);
+  return k(a.firstName) && k(a.firstName) === k(b.firstName) && (!lastA.length || !lastB.length || lastA.some(x => lastB.includes(x)));
+}
+function relativesOf(p, role) {
+  if (role === 'father') return [P(p.father)].filter(Boolean);
+  if (role === 'mother') return [P(p.mother)].filter(Boolean);
+  if (role === 'spouse') return (p.spouses || []).map(P).filter(Boolean);
+  if (role === 'child') return childrenOf(p.id);
+  return siblingsOf(p);
+}
+// Ist das neue Datum genauer als das alte (gleiches Jahr, aber mit Tag/Monat)? Gleiches gilt für Orte mit Zusatz.
+function moreExact(field, oldV, newV) {
+  if (/Date$/.test(field)) return yearOf(oldV) === yearOf(newV) && String(newV).length > String(oldV).replace(/^(um|ca\.) /, '').length && /^\d/.test(newV);
+  if (/Place$/.test(field)) return String(newV).toLowerCase().startsWith(String(oldV).toLowerCase());
+  return false;
+}
+function buildSuggestions(p, items) {
+  const out = [];
+  const sureOf = s => /^sicher/.test(s) ? 'sicher' : /^unsicher/.test(s) ? 'unsicher' : 'wahrscheinlich';
+  const fieldSug = (target, field, value, base, who) => {
+    if (!value) return;
+    const old = target[field] || '';
+    if (old && old.toLowerCase() === String(value).toLowerCase()) return;
+    out.push(Object.assign({ type: 'field', target: target.id, field, value, old, who,
+      checked: (!old || moreExact(field, old, value)) && base.sure !== 'unsicher' }, base));
+  };
+  items.forEach(it => {
+    if (!it.value || /^(unbekannt|keine|nichts|nicht gefunden|–|-|n\/a)/i.test(it.value)) return;
+    const base = { sure: sureOf(it.sure), source: it.source };
+    if (it.key === 'GEBURT' || it.key === 'TOD') {
+      const e = parseEvent(it.value), pre = it.key === 'GEBURT' ? 'birth' : 'death';
+      fieldSug(p, pre + 'Date', e.date, base); fieldSug(p, pre + 'Place', e.place, base);
+    } else if (it.key === 'BERUF') fieldSug(p, 'occupation', capFirst(it.value), base);
+    else if (it.key === 'GEBURTSNAME') fieldSug(p, 'birthName', capWords(it.value), base);
+    else if (ROLE[it.key]) {
+      const role = ROLE[it.key], r = parseSpoken(it.value);
+      if (!r.firstName && !r.lastName) return;
+      const existing = relativesOf(p, role).find(q => sameName(q, r));
+      if (existing) {
+        ['birthName', 'birthDate', 'birthPlace', 'deathDate', 'deathPlace', 'occupation'].forEach(f => { if (r[f] && (!existing[f] || moreExact(f, existing[f], r[f]))) fieldSug(existing, f, r[f], base, fullName(existing)); });
+      } else {
+        const replaces = (role === 'father' && P(p.father)) || (role === 'mother' && P(p.mother));
+        const noParents = role === 'sibling' && !P(p.father) && !P(p.mother);
+        out.push(Object.assign({ type: 'new', role, data: r, replaces: replaces ? fullName(replaces) : '', disabled: noParents,
+          checked: !replaces && !noParents && base.sure !== 'unsicher' }, base));
+      }
+    }
+  });
+  return out;
+}
+function importClaude(id) {
+  const p = P(id); if (!p) return;
+  const dlg = openModal(`
+    <h2>📥 Claude-Antwort übernehmen</h2>
+    <p class="hint">Kopiere in der Claude-App die ganze Antwort (lange auf die Antwort tippen → Kopieren) und füge sie hier ein.
+      Wichtig ist der Block <b>STAMMBAUM-DATEN</b> am Ende.</p>
+    <button class="btn primary" id="cPaste" style="width:100%">📋 Aus Zwischenablage einfügen</button>
+    <textarea id="cText" placeholder="… oder hier lange tippen → Einfügen" style="margin-top:8px"></textarea>
+    <button class="btn" id="cRead" style="width:100%;margin-top:8px">Auswerten</button>
+    <div id="cOut"></div>
+    <div class="actions"><button class="btn" id="cancel">Zurück</button><button class="btn primary" id="ok" disabled>✓ Ausgewählte übernehmen</button></div>`);
+  let sugs = [];
+  const roleLabel = { father: 'Vater', mother: 'Mutter', spouse: 'Partner/in', child: 'Kind', sibling: 'Geschwister' };
+  const show = () => {
+    const items = parseClaudeBlock(dlg.querySelector('#cText').value), out = dlg.querySelector('#cOut');
+    if (!items) {
+      out.innerHTML = `<div class="research locked">Ich finde keinen Block <b>STAMMBAUM-DATEN</b>. Schreib Claude einfach: <i>„Bitte gib mir die Zusammenfassung noch einmal im Format STAMMBAUM-DATEN.“</i></div>`;
+      dlg.querySelector('#ok').disabled = true; return;
+    }
+    sugs = buildSuggestions(p, items);
+    if (!sugs.length) { out.innerHTML = '<div class="research open">Keine neuen Angaben gefunden – alles ist schon eingetragen.</div>'; dlg.querySelector('#ok').disabled = true; return; }
+    out.innerHTML = '<h3>Vorschläge – abhaken, was stimmt:</h3>' + sugs.map((s, i) => {
+      let txt;
+      if (s.type === 'field') txt = `${s.who ? '<b>' + esc(s.who) + '</b> – ' : ''}${FIELD_LABEL[s.field]}: <b>${esc(s.value)}</b>${s.old ? ` <span class="warn">(bisher: ${esc(s.old)})</span>` : ''}`;
+      else {
+        const d = s.data;
+        txt = `Neue Person (${roleLabel[s.role]}): <b>${esc([d.firstName, d.lastName].filter(Boolean).join(' '))}</b>${d.birthName ? ' geb. ' + esc(d.birthName) : ''} ${esc(lifeSpan(d))}${d.birthPlace ? ', ' + esc(d.birthPlace) : ''}`
+          + (s.replaces ? ` <span class="warn">(ersetzt bisherige/n: ${esc(s.replaces)})</span>` : '')
+          + (s.disabled ? ' <span class="warn">(geht erst, wenn Vater oder Mutter eingetragen sind)</span>' : '');
+      }
+      return `<label class="sug"><input type="checkbox" data-i="${i}"${s.checked ? ' checked' : ''}${s.disabled ? ' disabled' : ''}>
+        <span>${txt}<br><small class="sure-${s.sure}">${s.sure}</small>${s.source ? ' <small>· ' + linkify(s.source) + '</small>' : ''}</span></label>`;
+    }).join('');
+    dlg.querySelector('#ok').disabled = false;
+  };
+  dlg.querySelector('#cPaste').onclick = async () => {
+    try { const t = await navigator.clipboard.readText(); if (t) { dlg.querySelector('#cText').value = t; show(); return; } } catch (e) {}
+    dlg.querySelector('#cText').focus();
+  };
+  dlg.querySelector('#cRead').onclick = show;
+  dlg.querySelector('#cancel').onclick = () => openResearch(id);
+  dlg.querySelector('#ok').onclick = () => {
+    const chosen = [...dlg.querySelectorAll('#cOut input:checked')].map(x => sugs[+x.dataset.i]);
+    if (!chosen.length) { alert('Bitte mindestens einen Vorschlag abhaken.'); return; }
+    const order = { father: 0, mother: 1, spouse: 3, child: 4, sibling: 5 };
+    chosen.sort((a, b) => (a.type === 'field' ? 2 : order[a.role]) - (b.type === 'field' ? 2 : order[b.role]));
+    const srcLine = (q, what, s) => { if (s.source) q.sources = (q.sources ? q.sources + '\n' : '') + `${what}: ${s.source} (${s.sure})`; };
+    chosen.forEach(s => {
+      if (s.type === 'field') {
+        const q = P(s.target); q[s.field] = s.value;
+        if (/^death/.test(s.field)) q.status = 'verstorben';
+        srcLine(q, FIELD_LABEL[s.field], s);
+      } else {
+        const d = s.data, by = yearOf(d.birthDate);
+        const np = newPerson({ firstName: d.firstName || '', lastName: d.lastName || '', birthName: d.birthName || '',
+          birthDate: d.birthDate || '', birthPlace: d.birthPlace || '', deathDate: d.deathDate || '', deathPlace: d.deathPlace || '', occupation: d.occupation || '',
+          gender: s.role === 'father' ? 'm' : s.role === 'mother' ? 'w' : (d.gender || 'u'),
+          status: d.deathDate || d.deathPlace || (by && by <= THIS_YEAR - PROTECT_YEARS) ? 'verstorben' : (d.status || 'unbekannt') });
+        srcLine(np, 'Angaben', s);
+        data.persons[np.id] = np; link(p.id, s.role, np.id);
+      }
+    });
+    const date = new Date().toLocaleDateString('de-DE');
+    p.notes = (p.notes ? p.notes + '\n\n' : '') + `[Claude-Recherche ${date}] ${chosen.length} Angabe(n) übernommen.`;
+    save(); closeModal(); refresh(); openDetail(id);
+  };
+}
+
 // Fund mit Quelle zur Person hinzufügen (wird an Notizen und Quellen angehängt)
 function addFinding(id) {
   const p = P(id); if (!p) return;
@@ -881,6 +1038,12 @@ function personForm(id, preset = {}, onCreate = null, title = null, again = null
     <div class="voice" id="voicePanel" hidden>
       <div class="hint">Sprich oder füge Text ein, zum Beispiel eine WhatsApp-Antwort oder eine Todesanzeige: <i>„Karl Weber, geboren am 17. Juni 1880 in Rothenburg, gestorben 1944 in Ulm, von Beruf Schmied“</i>.
         Auch möglich: „Anna Weber geborene Schmidt …“ oder „… lebt noch“.<br><small>Das Zuhören übernimmt Chrome (Google), genau wie beim Mikrofon der Tastatur.</small></div>
+      <details class="phototip"><summary>📷 Text aus einem Foto (Stammbuch, Sterbebild, Grabstein …)?</summary>
+        <ol><li>Dokument mit der Handy-Kamera fotografieren.</li>
+        <li>Foto in der Galerie öffnen und auf das Symbol <b>„T“</b> (Text erkennen) tippen – oder <b>Google Lens</b> nutzen.</li>
+        <li>Text markieren → <b>Kopieren</b>.</li>
+        <li>Hier lange ins Feld tippen → <b>Einfügen</b> → „In Felder übernehmen“.</li></ol>
+        <small>Funktioniert gut bei gedruckter Schrift, bei alter Handschrift meist nicht.</small></details>
       <textarea id="voiceText" placeholder="Hier erscheint, was du sagst. Du kannst den Text auch eintippen oder korrigieren."></textarea>
       <div class="two">
         <button type="button" class="btn" id="voiceMic">🎤 Sprechen</button>
@@ -948,7 +1111,15 @@ function personForm(id, preset = {}, onCreate = null, title = null, again = null
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null, listening = false;
   const applyVoice = () => {
+    if (/STAMMBAUM-DATEN/i.test(vText.value)) {
+      vMsg.textContent = 'Das ist eine Claude-Antwort. Bitte die Person antippen → „🔍 Recherche starten“ → „📥 Claude-Antwort einfügen“. Dort erscheinen die Funde als Vorschläge zum Abhaken.';
+      return;
+    }
     const r = parseSpoken(vText.value); const filled = [];
+    // Unsinnige Namen (ganzer Satz statt Name) nicht übernehmen
+    const words = [r.firstName, r.lastName].filter(Boolean).join(' ').split(/\s+/).length;
+    let nameSkipped = false;
+    if (words > 4) { delete r.firstName; delete r.lastName; nameSkipped = true; }
     const current = {}; ['firstName', 'lastName', 'birthName', 'birthPlace', 'deathPlace'].forEach(k => current[k] = field(k).value);
     const changes = adaptToKnown(r, current);
     ['firstName', 'lastName', 'birthName', 'birthDate', 'birthPlace', 'deathDate', 'deathPlace', 'occupation'].forEach(k => {
@@ -960,6 +1131,7 @@ function personForm(id, preset = {}, onCreate = null, title = null, again = null
     ['birthDate', 'deathDate'].forEach(showHint);
     vMsg.textContent = filled.length ? '✓ Übernommen – bitte kurz prüfen. Die gelb markierten Felder wurden ausgefüllt.' : 'Ich konnte nichts erkennen. Versuch es bitte noch einmal.';
     if (changes.length) vMsg.textContent += ' Schreibweise wie im Stammbaum angepasst: ' + changes.join(', ') + '.';
+    if (nameSkipped) vMsg.textContent += ' Den Namen konnte ich nicht sicher erkennen – bitte nur die Zeile mit Name und Daten einfügen oder den Namen selbst eintragen.';
   };
   const startMic = () => {
     if (!SR) { vMsg.textContent = 'Dein Browser kann hier nicht zuhören. Tipp: Tippe ins Textfeld und nutze das Mikrofon deiner Tastatur.'; vText.focus(); return; }
@@ -1214,8 +1386,8 @@ fileInput.onchange = async () => {
   const file = fileInput.files[0]; if (!file) return;
   const buf = await file.arrayBuffer();
   let text = new TextDecoder('utf-8').decode(buf);
+  let next;
   try {
-    let next;
     if (fileInput.dataset.mode === 'json') {
       next = JSON.parse(text); if (!next || !next.persons) throw new Error();
     } else {
@@ -1224,12 +1396,57 @@ fileInput.onchange = async () => {
       if (!ids.length) throw new Error();
       next = { version: 1, persons, rootId: ids[0], focusId: ids[0] };
     }
-    const cnt = Object.keys(next.persons).length;
-    if (Object.keys(data.persons).length && !confirm(`Die Datei enthält ${cnt} Personen. Sie ersetzt den aktuellen Stammbaum. Fortfahren?`)) return;
-    data = next; save(); closeModal(); closeSheet(); showTree(); refresh(true);
-    alert(`${cnt} Personen geladen.`);
-  } catch (e) { alert('Diese Datei konnte nicht gelesen werden.'); }
+  } catch (e) { alert('Diese Datei konnte nicht gelesen werden.'); return; }
+  const cnt = Object.keys(next.persons).length;
+  const replace = () => { data = next; save(); closeModal(); closeSheet(); showTree(); refresh(true); alert(`${cnt} Personen geladen.`); };
+  if (!Object.keys(data.persons).length) return replace();
+  if (fileInput.dataset.mode === 'json') {
+    if (confirm(`Die Sicherung enthält ${cnt} Personen. Sie ersetzt den aktuellen Stammbaum. Fortfahren?`)) replace();
+    return;
+  }
+  const dlg = openModal(`<h2>📥 GEDCOM-Datei: ${cnt} Personen</h2>
+    <p>Was soll mit den Personen passieren?</p>
+    <div class="menu-list">
+      <button class="btn primary" id="gMerge">➕ Zu meinem Stammbaum hinzufügen<br><small>Personen, die es schon gibt (gleicher Name und gleiches Geburtsjahr), werden zusammengeführt – leere Felder werden ergänzt, nichts wird überschrieben.</small></button>
+      <button class="btn danger" id="gReplace">Meinen Stammbaum ersetzen</button>
+      <button class="btn" id="gCancel">Abbrechen</button>
+    </div>`);
+  dlg.querySelector('#gCancel').onclick = closeModal;
+  dlg.querySelector('#gReplace').onclick = () => { if (confirm('Wirklich ersetzen? Am besten vorher eine Sicherung machen.')) replace(); };
+  dlg.querySelector('#gMerge').onclick = () => {
+    const r = mergePersons(next.persons);
+    save(); closeModal(); closeSheet(); showTree(); refresh(true);
+    alert(`Fertig: ${r.added} neue Personen hinzugefügt, ${r.merged} vorhandene Personen ergänzt.`);
+  };
 };
+
+// Fügt Personen hinzu; Doppelte (gleicher Name + gleiches Geburtsjahr) werden zusammengeführt
+function mergePersons(imp) {
+  const map = {}; let added = 0, merged = 0;
+  const FIELDS = ['firstName', 'lastName', 'birthName', 'birthDate', 'birthPlace', 'deathDate', 'deathPlace', 'occupation', 'notes', 'sources', 'photo'];
+  Object.values(imp).forEach(q => {
+    const by = yearOf(q.birthDate), dy = yearOf(q.deathDate);
+    const twin = Object.values(data.persons).find(x => sameName(x, q) &&
+      ((by && yearOf(x.birthDate) === by) || (!by && !yearOf(x.birthDate) && dy && yearOf(x.deathDate) === dy)));
+    if (twin) {
+      map[q.id] = twin.id; merged++;
+      FIELDS.forEach(f => { if (q[f] && !twin[f]) twin[f] = q[f]; });
+      if (twin.gender === 'u' && q.gender !== 'u') twin.gender = q.gender;
+      if (twin.status === 'unbekannt' && q.status !== 'unbekannt') twin.status = q.status;
+    } else {
+      const np = Object.assign({}, q, { id: uid(), father: null, mother: null, spouses: [] });
+      data.persons[np.id] = np; map[q.id] = np.id; added++;
+    }
+  });
+  Object.values(imp).forEach(q => {
+    const t = P(map[q.id]);
+    if (q.father && map[q.father] && !P(t.father)) t.father = map[q.father];
+    if (q.mother && map[q.mother] && !P(t.mother)) t.mother = map[q.mother];
+    (q.spouses || []).forEach(s => { const m = map[s]; if (m && m !== t.id && !t.spouses.includes(m)) t.spouses.push(m); });
+  });
+  if (!P(data.rootId)) data.rootId = Object.values(map)[0];
+  return { added, merged };
+}
 
 // ====================== GEDCOM (Austauschformat) ======================
 const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];

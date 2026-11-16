@@ -43,6 +43,9 @@ keine App für Dritte, keine Stammbäume über fremde Personen.
 | 2026-11-16 | Schutzregel geändert: alle Verstorbenen recherchierbar; Lebende/unklar nur „Bei Google suchen“ |
 | 2026-11-16 | „📋 Text einfügen“ im Formular (liest Zwischenablage; erkennt auch *, †, geb. am, Geburtsdatum:/Geburtsort:) |
 | 2026-11-16 | „📨 Fragen (WhatsApp/SMS)“ auf Wunsch wieder entfernt |
+| 2026-11-16 | **Claude-Antwort übernehmen:** Claude-Text verlangt am Ende einen Block `### STAMMBAUM-DATEN … ### ENDE` (GEBURT/TOD/BERUF/GEBURTSNAME/VATER/MUTTER/EHEPARTNER/KIND/GESCHWISTER: Wert \| Sicherheit \| Quelle). „📥 Claude-Antwort einfügen“ zeigt Vorschläge zum Abhaken (vorhandene Verwandte werden per Kölner Phonetik erkannt und ergänzt, sonst neu angelegt + verknüpft; Quelle wird zu den Quellen geschrieben). Vorab angehakt: leere Felder bzw. genauere Angaben, nicht „unsicher“. |
+| 2026-11-16 | **GEDCOM hinzufügen statt ersetzen:** Doppelte (gleicher Name + gleiches Geburtsjahr) werden zusammengeführt, nur leere Felder ergänzt (`mergePersons`) |
+| 2026-11-16 | Foto-Tipp im Einfügen-Bereich (Galerie „T“/Google Lens → kopieren → einfügen); Schutz: Claude-Antwort im Personen-Formular wird erkannt und umgeleitet |
 
 ## 4. Nächste Schritte
 - Stufe 2 ist umgesetzt. Die Such-Adressen (URL-Parameter) von GEDBAS, Arolsen, DDB, Find a Grave konnten

@@ -5,8 +5,8 @@
 Ein **privater Familien-Stammbaum** im Browser (auch am Handy). Reines Familienprojekt:
 keine App für Dritte, keine Stammbäume über fremde Personen.
 
-- **Online:** über GitHub Pages (`https://marchens1977.github.io/stammbaum/`), Stand von `main`.
-- **Repository:** `marchens1977/stammbaum`
+- **Online:** über GitHub Pages (`https://marchens1977.github.io/Stammbaum/`), Stand von `main`.
+- **Repository:** `marchens1977/Stammbaum`
 
 ### Technischer Aufbau
 - `index.html` – die ganze App in einer Datei (Aussehen + Logik). Oben im Skript: Einstellungen

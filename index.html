@@ -132,6 +132,11 @@
   .partner-row { display: flex; align-items: center; justify-content: space-between; background: #f3ead4; border-radius: 10px; padding: 6px 10px; margin-bottom: 6px; }
   .partner-row button { background: none; border: none; color: #a33; font-size: 1.1rem; }
   [hidden] { display: none !important; }
+  div.sug { background: #fff; border: 1px solid #d8c9a3; border-radius: 12px; padding: 10px; margin: 0 0 8px; font-size: .95rem; }
+  label.sugl { display: flex; gap: 10px; align-items: flex-start; margin: 0; color: var(--ink); font-size: .95rem; }
+  label.sugl input { width: 24px; height: 24px; flex: none; margin-top: 1px; }
+  .sugrole { margin: 6px 0 0 34px; font-size: .9rem; } .sugsrc { margin: 4px 0 0 34px; } .sugsrc a { color: var(--green); word-break: break-all; }
+  .count .mini, #count .mini { font: .85rem system-ui, sans-serif; background: #fff; border: 1px solid #d0bf96; border-radius: 8px; padding: 2px 8px; color: #a33; }
   select.rolesel { width: auto; padding: 4px 6px; font-size: .88rem; margin-top: 4px; border-radius: 8px; border: 1px solid #c8b895; background: #fff; }
   h3 .mini { font: .8rem system-ui, sans-serif; background: none; border: 1px solid #d0bf96; border-radius: 8px; padding: 2px 8px; color: var(--green); margin-left: 6px; vertical-align: middle; }
   .snip { background: #fff; border: 1px solid #d8c9a3; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; font-size: .88rem; cursor: pointer; }
@@ -216,7 +221,7 @@ const MAX_ANCESTOR_GENS = 3;      // wie viele Generationen nach oben (Eltern, G
 const MAX_DESC_GENS = 2;          // wie viele Generationen nach unten (Kinder, Enkel)
 const PROTECT_YEARS = 110;        // wer vor mehr als so vielen Jahren geboren wurde, gilt als verstorben
 const STORE_KEY = 'stammbaum-daten-v1';
-const APP_VERSION = '2026-11-16 Nr. 23';   // bei jeder Änderung hochzählen – steht unten im Menü
+const APP_VERSION = '2026-11-17 Nr. 24';   // bei jeder Änderung hochzählen – steht unten im Menü
 const THIS_YEAR = new Date().getFullYear();
 
 // ====================== Daten ======================
@@ -226,6 +231,56 @@ function load() {
   try { const d = JSON.parse(localStorage.getItem(STORE_KEY)); if (d && d.persons) return d; } catch (e) {}
   return emptyData();
 }
+// ---- Person nachträglich mit dem Stammbaum verbinden ----
+function connectPerson(id) {
+  const p = P(id); if (!p) return;
+  const REL = [
+    ['child', 'ist Kind von …'], ['grandchild', 'ist Enkel/in von …'], ['spouse', 'ist Partner/in von …'],
+    ['sibling', 'ist Bruder/Schwester von …'], ['parent', 'ist Vater/Mutter von …'], ['auntuncle', 'ist Tante/Onkel von …']
+  ];
+  const dlg = openModal(`<h2>🔗 ${esc(fullName(p))} verbinden</h2>
+    <label>Wie ist ${esc(p.firstName || 'die Person')} verwandt?</label>
+    <select id="cRel">${REL.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
+    <label>… mit wem?</label>
+    <select id="cWho">${personOptions('', id)}</select>
+    <div id="cStep2"></div>
+    <div class="hint" id="cMsg"></div>
+    <div class="actions"><button class="btn" id="cancel">Abbrechen</button><button class="btn primary" id="ok">🔗 Verbinden</button></div>`);
+  const rel = () => dlg.querySelector('#cRel').value, who = () => P(dlg.querySelector('#cWho').value);
+  const step2 = () => {   // Enkel/Tante/Onkel: über welches Kind bzw. welchen Elternteil?
+    const box = dlg.querySelector('#cStep2'), w = who(); box.innerHTML = '';
+    if (!w) return;
+    if (rel() === 'grandchild') {
+      const kids = childrenOf(w.id);
+      box.innerHTML = kids.length ? `<label>Über welches Kind von ${esc(w.firstName)}? (Vater oder Mutter von ${esc(p.firstName)})</label><select id="cVia">${kids.map(k => `<option value="${k.id}">${esc(fullName(k))}</option>`).join('')}</select>`
+        : `<div class="research locked">${esc(w.firstName)} hat noch keine Kinder im Stammbaum. Bitte zuerst das passende Kind (Vater/Mutter von ${esc(p.firstName)}) eintragen.</div>`;
+    }
+    if (rel() === 'auntuncle') {
+      const par = [P(w.father), P(w.mother)].filter(Boolean);
+      box.innerHTML = par.length ? `<label>Bruder/Schwester von welchem Elternteil von ${esc(w.firstName)}?</label><select id="cVia">${par.map(k => `<option value="${k.id}">${esc(fullName(k))}</option>`).join('')}</select>`
+        : `<div class="research locked">Bei ${esc(w.firstName)} sind noch keine Eltern eingetragen.</div>`;
+    }
+  };
+  dlg.querySelector('#cRel').onchange = step2; dlg.querySelector('#cWho').onchange = step2;
+  dlg.querySelector('#cancel').onclick = () => { closeModal(); openDetail(id); };
+  dlg.querySelector('#ok').onclick = () => {
+    const w = who(), r = rel(), via = P((dlg.querySelector('#cVia') || {}).value);
+    if (!w) { alert('Bitte eine Person auswählen.'); return; }
+    if (r === 'child') link(w.id, 'child', id);
+    else if (r === 'spouse') link(id, 'spouse', w.id);
+    else if (r === 'parent') link(w.id, p.gender === 'w' ? 'mother' : 'father', id);
+    else if (r === 'grandchild') { if (!via) { alert('Bitte zuerst das passende Kind eintragen.'); return; } link(via.id, 'child', id); }
+    else if (r === 'sibling' || r === 'auntuncle') {
+      const base = r === 'sibling' ? w : via;
+      if (!base) { alert('Dafür fehlen noch Eltern im Stammbaum.'); return; }
+      if (!P(base.father) && !P(base.mother)) { alert(`Geschwister werden über die Eltern verbunden – bei ${base.firstName} sind noch keine Eltern eingetragen.`); return; }
+      link(base.id, 'sibling', id);
+    }
+    p.notes = String(p.notes || '').replace(/\n*Laut Fund:[^\n]*Verbindung im Stammbaum bitte selbst setzen\.?/g, '').trim();
+    save(); closeModal(); refresh(); openDetail(id);
+  };
+}
+
 // Nur Notizen und Quellen bearbeiten (schnell, ohne das ganze Formular)
 function editNotes(id) {
   const p = P(id); if (!p) return;
@@ -368,10 +423,14 @@ function renderTree(fit) {
   });
 
   // --- Nachkommen (nach unten) ---
+  // Partner der Kinder/Enkel werden direkt daneben gezeigt (Paar = doppelte Breite)
+  const mateOf = c => (c.spouses || []).map(P).filter(Boolean)[0] || null;
+  const unitW = c => step * (mateOf(c) ? 2 : 1);
   const descW = (id, depth) => {
-    if (depth >= MAX_DESC_GENS) return step;
-    const ch = childrenOf(id); if (!ch.length) return step;
-    return Math.max(step, ch.reduce((s, c) => s + descW(c.id, depth + 1), 0));
+    const own = unitW(P(id));
+    if (depth >= MAX_DESC_GENS) return own;
+    const ch = childrenOf(id); if (!ch.length) return own;
+    return Math.max(own, ch.reduce((s, c) => s + descW(c.id, depth + 1), 0));
   };
   const placeKids = (id, px, py, depth, startFn) => {
     if (depth >= MAX_DESC_GENS) return;
@@ -379,10 +438,16 @@ function renderTree(fit) {
     const tot = ch.reduce((s, c) => s + descW(c.id, depth + 1), 0);
     let left = px - tot / 2; const y = py + rowH, midY = y - CH / 2 - VG / 2;
     ch.forEach(c => {
-      const w = descW(c.id, depth + 1), x = left + w / 2; left += w;
+      const w = descW(c.id, depth + 1), center = left + w / 2; left += w;
+      const mate = mateOf(c), x = mate ? center - step / 2 : center;
       nodes.push({ id: c.id, x, y });
+      if (mate) {
+        nodes.push({ id: mate.id, x: center + step / 2, y });
+        lines.push(`M${x + CW / 2},${y}H${center + step / 2 - CW / 2}`);
+        marks.push({ x: center, y: y - 6 });
+      }
       const s = startFn(c); lines.push(`M${s.x},${s.y}V${midY}H${x}V${y - CH / 2}`);
-      placeKids(c.id, x, y, depth + 1, () => ({ x, y: y + CH / 2 }));
+      placeKids(c.id, center, y, depth + 1, k => (mate && (k.father === mate.id || k.mother === mate.id)) ? { x: center, y } : { x, y: y + CH / 2 });
     });
   };
   const gapX = j => j * step + CW / 2 + HG / 2;
@@ -544,6 +609,8 @@ function openDetail(id) {
           <a class="btn google-btn" href="${esc(googleUrl(p))}" target="_blank" rel="noopener">🔎 Bei Google suchen</a>
           <button class="btn google-btn" data-act="finding">📥 Fund übernehmen</button></div>`
       : `<button class="btn primary research-btn" data-act="research">🔍 Recherche starten</button>`}
+    ${Object.keys(data.persons).length > 1 && !isConnected(p) ? `<div class="research locked" style="margin-top:14px">🔗 <b>Noch nicht im Stammbaum verbunden.</b> Deshalb erscheint ${esc(p.firstName || 'die Person')} im Baum nur, wenn sie in der Mitte steht.
+      <button class="btn primary google-btn" data-act="connect" style="color:#fff">🔗 Jetzt verbinden</button></div>` : ''}
     <div class="actions">
       <button class="btn primary" data-act="edit">✏️ Bearbeiten</button>
       <button class="btn" data-act="focus">🎯 In die Mitte</button>
@@ -552,6 +619,7 @@ function openDetail(id) {
       <button class="btn" data-act="spouse">＋ Partner/in</button>
       <button class="btn" data-act="child">＋ Kind</button>
       <button class="btn wide" data-act="sibling">＋ Bruder / Schwester</button>
+      <button class="btn wide" data-act="connect">🔗 Mit vorhandener Person verbinden (Enkel, Tante, Onkel …)</button>
       ${data.rootId !== id ? '<button class="btn wide" data-act="root">🏠 Als Startperson festlegen</button>' : ''}
       <button class="btn danger wide" data-act="delete">🗑️ Person löschen</button>
     </div>`;
@@ -767,27 +835,37 @@ const ROLE_LABEL = { father: 'Vater', mother: 'Mutter', spouse: 'Partner/in', ch
 // Vorschläge als Liste zum Abhaken anzeigen
 function renderSugs(sugs) {
   return '<h3>Vorschläge – abhaken, was stimmt:</h3>' + sugs.map((s, i) => {
-    let txt;
+    let txt, roleSel = '';
     if (s.type === 'field') txt = `${s.who ? '<b>' + esc(s.who) + '</b> – ' : ''}${FIELD_LABEL[s.field]}: <b>${esc(s.field === 'gender' ? ({ m: 'Mann', w: 'Frau' }[s.value] || s.value) : s.value)}</b>${s.old ? ` <span class="warn">(bisher: ${esc(s.old)})</span>` : ''}`;
     else {
       const d = s.data;
-      const sel = `<select class="rolesel" data-r="${i}">${Object.keys(ROLE_LABEL).map(k => `<option value="${k}"${k === s.role ? ' selected' : ''}>${ROLE_LABEL[k]}</option>`).join('')}</select>`;
+      roleSel = `<select class="rolesel" data-r="${i}">${Object.keys(ROLE_LABEL).map(k => `<option value="${k}"${k === s.role ? ' selected' : ''}>${ROLE_LABEL[k]}</option>`).join('')}</select>`;
       txt = `Neue Person: <b>${esc([d.firstName, d.lastName].filter(Boolean).join(' '))}</b>${d.birthName ? ' geb. ' + esc(d.birthName) : ''} ${esc(lifeSpan(d))}${d.birthPlace ? ', ' + esc(d.birthPlace) : ''}`
         + (s.relLabel ? ` <span class="hint">(laut Text: ${esc(s.relLabel)}${s.partnerOf || s.childOf ? ' – wird verbunden, wenn angehakt' : s.role === 'other' ? ' – wird ohne Verbindung angelegt' : ''})</span>` : '')
-        + `<br>als ${sel}`
+
         + (s.replaces ? ` <span class="warn">(ersetzt bisherige/n: ${esc(s.replaces)})</span>` : '')
         + (s.disabled ? ' <span class="warn">(geht erst, wenn Vater oder Mutter eingetragen sind)</span>' : '');
     }
-    return `<label class="sug"><input type="checkbox" data-i="${i}"${s.checked ? ' checked' : ''}${s.disabled ? ' disabled' : ''}>
-      <span>${txt}<br><small class="sure-${s.sure}">${s.sure}</small>${s.source ? ' <small>· ' + linkify(s.source) + '</small>' : ''}</span></label>`;
+    return `<div class="sug"><label class="sugl"><input type="checkbox" data-i="${i}"${s.checked ? ' checked' : ''}${s.disabled ? ' disabled' : ''}>
+      <span>${txt}</span></label>${s.type === 'new' ? `<div class="sugrole">als ${roleSel}</div>` : ''}
+      <div class="sugsrc"><small class="sure-${s.sure}">${s.sure}</small>${s.source ? ' <small>· ' + linkify(s.source) + '</small>' : ''}</div></div>`;
   }).join('');
 }
+function sugKey(s) { return s.type + '|' + (s.field || '') + '|' + (s.target || '') + '|' + (s.data ? [s.data.firstName, s.data.lastName].join(' ') : s.value); }
+function rememberSugs(box, sugs) {
+  const m = new Map();
+  box.querySelectorAll('input[type=checkbox][data-i]').forEach(x => { const s = sugs[+x.dataset.i]; if (s) m.set(sugKey(s), { checked: x.checked }); });
+  box.querySelectorAll('select.rolesel').forEach(x => { const s = sugs[+x.dataset.r]; if (s && m.has(sugKey(s))) m.get(sugKey(s)).role = x.value; });
+  return m;
+}
+function restoreSugs(sugs, m) { sugs.forEach(s => { const o = m.get(sugKey(s)); if (o) { s.checked = o.checked; if (o.role) s.role = o.role; } }); }
 function collectChosen(box, sugs) {
   box.querySelectorAll('select.rolesel').forEach(x => { sugs[+x.dataset.r].role = x.value; });
   return [...box.querySelectorAll('input[type=checkbox]:checked')].map(x => sugs[+x.dataset.i]);
 }
 // Abgehakte Vorschläge übernehmen (Felder setzen, neue Verwandte anlegen und verknüpfen, Quellen notieren)
 function applySuggestions(p, chosen) {
+  const result = { created: [], updated: 0, errors: 0 };
   const order = { father: 0, mother: 1, spouse: 3, child: 4, sibling: 5, other: 6 };
   chosen.sort((a, b) => (a.type === 'field' ? 2 : order[a.role]) - (b.type === 'field' ? 2 : order[b.role]));
   // Quellen sammeln: pro Person und Quelle nur eine Zeile („Geburtsdatum, Sterbeort: Link (sicher)“)
@@ -796,8 +874,8 @@ function applySuggestions(p, chosen) {
     if (!s.source) return; const k = q.id + '|' + s.source + '|' + s.sure;
     if (!groups.has(k)) groups.set(k, { q, what: [], s }); groups.get(k).what.push(what);
   };
-  chosen.forEach(s => {
-    if (s.type === 'field') {
+  chosen.forEach(s => { try {
+    if (s.type === 'field') { result.updated++;
       const q = P(s.target); q[s.field] = s.value;
       if (/^death/.test(s.field)) q.status = 'verstorben';
       if (s.field !== 'gender') srcLine(q, FIELD_LABEL[s.field], s);
@@ -816,12 +894,33 @@ function applySuggestions(p, chosen) {
       else if (s.role === 'other') np.notes = `Laut Fund: ${s.relLabel || 'Verwandte/r'} von ${fullName(p)} – Verbindung im Stammbaum bitte selbst setzen.`;
       else if (s.role === 'sibling' && !P(p.father) && !P(p.mother)) np.notes = `Laut Fund: Geschwister von ${fullName(p)} – Eltern fehlen noch, deshalb noch nicht verbunden.`;
       else link(p.id, s.role, np.id);
+      np.added = Date.now(); result.created.push(np.id);
     }
-  });
+  } catch (e) { console.warn('übernehmen', e); result.errors++; } });
   groups.forEach(({ q, what, s }) => {
     const line = `${what.join(', ')}: ${s.source} (${s.sure})`;
     if (!String(q.sources || '').includes(line)) q.sources = (q.sources ? q.sources + '\n' : '') + line;
   });
+  return result;
+}
+// Hat die Person irgendeine Verbindung im Stammbaum?
+function isConnected(q) {
+  return !!(P(q.father) || P(q.mother) || (q.spouses || []).some(P) || Object.values(data.persons).some(x => x.father === q.id || x.mother === q.id));
+}
+// Rückmeldung nach dem Speichern: was wurde angelegt, was ist noch nicht verbunden?
+function showSaveResult(p, res) {
+  if (!res || (!res.created.length && !res.errors)) { openDetail(p.id); return; }
+  const made = res.created.map(P).filter(Boolean), loose = made.filter(q => !isConnected(q));
+  const dlg = openModal(`<h2>✓ Gespeichert</h2>
+    <p><b>${made.length} neue Person${made.length === 1 ? '' : 'en'}</b> angelegt${res.updated ? ` und ${res.updated} Angabe(n) ergänzt` : ''}.</p>
+    ${res.errors ? `<div class="research locked">${res.errors} Vorschlag/Vorschläge konnten nicht übernommen werden.</div>` : ''}
+    ${loose.length ? `<div class="research locked">🔗 <b>Noch nicht im Baum verbunden (${loose.length}):</b> Tippe einen Namen an und wähle „🔗 Verbinden“ (z. B. „Kind von …“).</div>
+      <div class="chips" style="margin:8px 0">${loose.map(q => `<button class="chip g-${q.gender}" data-go="${q.id}">${esc(fullName(q))}</button>`).join('')}</div>` : ''}
+    ${made.length - loose.length ? `<p class="hint">Verbunden: ${made.filter(isConnected).map(q => esc(q.firstName)).join(', ')}</p>` : ''}
+    <p class="hint">Alle Personen findest du auch unter <b>Liste</b>.</p>
+    <div class="actions"><button class="btn wide primary" id="ok">Fertig</button></div>`);
+  dlg.querySelector('#ok').onclick = () => { closeModal(); openDetail(p.id); };
+  dlg.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { closeModal(); openDetail(b.dataset.go); });
 }
 function importClaude(id) {
   const p = P(id); if (!p) return;
@@ -855,10 +954,10 @@ function importClaude(id) {
   dlg.querySelector('#ok').onclick = () => {
     const chosen = collectChosen(dlg.querySelector('#cOut'), sugs);
     if (!chosen.length) { alert('Bitte mindestens einen Vorschlag abhaken.'); return; }
-    applySuggestions(p, chosen);
+    const res = applySuggestions(p, chosen);
     const date = new Date().toLocaleDateString('de-DE');
     p.notes = (p.notes ? p.notes + '\n\n' : '') + `[Claude-Recherche ${date}] ${chosen.length} Angabe(n) übernommen.`;
-    save(); closeModal(); refresh(); openDetail(id);
+    save(); closeModal(); refresh(); showSaveResult(p, res);
   };
 }
 
@@ -1282,6 +1381,7 @@ function addFinding(id, pre = {}) {
   });
   const parse = () => {
     const out = dlg.querySelector('#fOut'), text = T().replace(/https?:\/\/\S+/g, ' ');
+    const prevState = rememberSugs(out, sugs);
     if (!text && !wiki) { out.innerHTML = ''; return; }
     // Für Verwandte einen großen Bereich auswerten: bei einer gelesenen Seite ab der gewählten Stelle bis ca. 2500 Zeichen weiter
     let relText = wiki ? (wiki.text || '') : text;
@@ -1318,6 +1418,7 @@ function addFinding(id, pre = {}) {
     const other = plausible && fr.firstName && !sameName(p, fr)
       ? `<div class="research locked">⚠️ Im Text steht <b>${esc(frag)}</b> – ist das wirklich ${esc(fullName(p))}?</div>` : '';
     if (other) sugs.forEach(x => x.checked = false);   // anderer Name: nichts vorab anhaken
+    restoreSugs(sugs, prevState);   // Haken und Rollen, die der Nutzer schon gesetzt hat, behalten
     out.innerHTML = other + (sugs.length ? renderSugs(sugs)
       : `<div class="research open">Ich habe keine neuen Daten erkannt (ausgewertet: ${(wiki ? (wiki.text || '').length : (pageText || text).length)} Zeichen). Der Text wird trotzdem als Notiz gespeichert.` + (prot ? '' : ' Bei längeren Texten hilft „Von Claude prüfen lassen“.') + '</div>');
   };
@@ -1436,14 +1537,14 @@ function addFinding(id, pre = {}) {
     const t = T(), s = SRC();
     if (!t && !s) { alert('Bitte etwas eintragen.'); return; }
     const chosen = collectChosen(dlg.querySelector('#fOut'), sugs);
-    applySuggestions(p, chosen);
+    const res = applySuggestions(p, chosen);
     const date = new Date().toLocaleDateString('de-DE');
     const short = t.length > 800 ? t.slice(0, 800) + ' …' : t;
     // Nur der Seitentitel (z. B. „Max Muster – Wikipedia“) ist keine Notiz wert
     const titleOnly = /^https?:/i.test(s) && (t === (pre.title || '').trim() || (!/\d/.test(t) && t.length < 120));
     if (t && !titleOnly && !hasNote(p, short)) p.notes = (p.notes ? p.notes + '\n\n' : '') + `[Fund ${date}, ${sure}] ${short}`;
     if (s && !String(p.sources || '').includes(s)) p.sources = (p.sources ? p.sources + '\n' : '') + s;
-    save(); closeModal(); refresh(); openDetail(id);
+    save(); closeModal(); refresh(); showSaveResult(p, res);
   };
   // Geteilte Seite ohne markierten Text → automatisch auslesen
   const onlyTitle = !pre.text || pre.text.length < 80;
@@ -1500,6 +1601,7 @@ sheet.addEventListener('click', e => {
   if (act === 'close') closeSheet();
   else if (act === 'edit') personForm(id);
   else if (act === 'editnotes') editNotes(id);
+  else if (act === 'connect') connectPerson(id);
   else if (act === 'focus') { data.focusId = id; save(); closeSheet(); showTree(); renderTree(true); }
   else if (act === 'root') { data.rootId = id; save(); openDetail(id); }
   else if (act === 'delete') deletePerson(id);
@@ -2012,16 +2114,22 @@ function deletePerson(id) {
 }
 
 // ====================== Liste ======================
+let listLooseOnly = false;
 function renderList() {
   const q = document.getElementById('search').value.trim().toLowerCase();
   const all = sortedPersons();
   const hit = all.filter(p => !q || [p.firstName, p.lastName, p.birthName, p.birthPlace, p.deathPlace, p.birthDate, p.deathDate, p.occupation]
     .join(' ').toLowerCase().includes(q));
-  document.getElementById('count').textContent = q ? `${hit.length} von ${all.length} Personen` : `${all.length} Personen im Stammbaum`;
-  document.getElementById('list').innerHTML = hit.map(p => `
+  const loose = all.filter(p => !isConnected(p)).length;
+  document.getElementById('count').innerHTML = (q ? `${hit.length} von ${all.length} Personen` : `${all.length} Personen im Stammbaum`)
+    + (loose && all.length > 1 ? ` · <button class="mini" id="looseBtn">🔗 ${loose} ohne Verbindung</button>` : '');
+  const lb = document.getElementById('looseBtn'); if (lb) lb.onclick = () => { document.getElementById('search').value = ''; listLooseOnly = !listLooseOnly; renderList(); };
+  const shown = listLooseOnly ? hit.filter(p => !isConnected(p)) : hit;
+  const isNew = p => p.added && Date.now() - p.added < 3 * 864e5;
+  document.getElementById('list').innerHTML = shown.map(p => `
     <div class="row g-${p.gender}" data-open="${p.id}">${avatarHTML(p)}
       <div><div class="nm">${esc(fullName(p))}${p.birthName ? ' <small>geb. ' + esc(p.birthName) + '</small>' : ''}</div>
-      <div class="sub">${esc(lifeSpan(p))}${p.birthPlace ? ' · ' + esc(p.birthPlace) : ''}</div></div></div>`).join('');
+      <div class="sub">${esc(lifeSpan(p))}${p.birthPlace ? ' · ' + esc(p.birthPlace) : ''}${isNew(p) ? ' · <b style="color:var(--green)">neu</b>' : ''}${all.length > 1 && !isConnected(p) ? ' · 🔗 ohne Verbindung' : ''}</div></div></div>`).join('');
 }
 document.getElementById('search').addEventListener('input', renderList);
 document.getElementById('list').addEventListener('click', e => {

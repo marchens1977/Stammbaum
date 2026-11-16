@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#3e5c3a">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>Unser Stammbaum</title>
 <style>
   :root {
@@ -500,7 +503,8 @@ function openDetail(id) {
     ${p.sources ? '<h3>Quellen</h3><div class="note">' + linkify(p.sources) + '</div>' : ''}
     ${prot
       ? `<div class="research locked">🔒 <b>Geschützt.</b> Diese Person lebt (oder es ist unklar). Deshalb gibt es hier keine KI-Recherche und keine Ahnenforschungs-Seiten – nur eine normale Google-Suche.
-          <a class="btn google-btn" href="${esc(googleUrl(p))}" target="_blank" rel="noopener">🔎 Bei Google suchen</a></div>`
+          <a class="btn google-btn" href="${esc(googleUrl(p))}" target="_blank" rel="noopener">🔎 Bei Google suchen</a>
+          <button class="btn google-btn" data-act="finding">📥 Fund übernehmen</button></div>`
       : `<button class="btn primary research-btn" data-act="research">🔍 Recherche starten</button>`}
     <div class="actions">
       <button class="btn primary" data-act="edit">✏️ Bearbeiten</button>
@@ -560,8 +564,20 @@ function researchSources(p) {
   list.push({ name: 'Google', what: 'Allgemeine Websuche nach Name, Ort und Jahr.', url: `https://www.google.com/search?q=${e(['"' + name + '"', place, by || ''].filter(Boolean).join(' '))}`, top: false });
   return list;
 }
-function claudePrompt(p) {
-  const line = q => {
+const CLAUDE_FORMAT = `Schreib ganz am Ende eine Zusammenfassung GENAU in diesem Format (nur Zeilen, zu denen du etwas gefunden hast; Sicherheit = sicher, wahrscheinlich oder unsicher; Daten als TT.MM.JJJJ, JJJJ oder „um JJJJ“):
+
+### STAMMBAUM-DATEN
+GEBURT: TT.MM.JJJJ in Ort | Sicherheit | Quelle mit Link
+TOD: TT.MM.JJJJ in Ort | Sicherheit | Quelle mit Link
+BERUF: Beruf | Sicherheit | Quelle mit Link
+GEBURTSNAME: Name | Sicherheit | Quelle mit Link
+VATER: Vorname Nachname, geboren TT.MM.JJJJ in Ort, gestorben TT.MM.JJJJ in Ort | Sicherheit | Quelle mit Link
+MUTTER: Vorname Nachname geborene Mädchenname, geboren …, gestorben … | Sicherheit | Quelle mit Link
+EHEPARTNER: (gleiches Format wie VATER)
+KIND: (gleiches Format, eine Zeile pro Kind)
+GESCHWISTER: (gleiches Format, eine Zeile pro Bruder/Schwester)
+### ENDE`;
+function personLine(q) {
     if (!q) return null;
     if (isProtected(q)) return `${q.gender === 'w' ? 'eine Frau' : q.gender === 'm' ? 'ein Mann' : 'eine Person'} (Angaben aus Datenschutzgründen weggelassen – bitte nicht zu dieser Person recherchieren)`;
     const parts = [fullName(q)];
@@ -570,7 +586,9 @@ function claudePrompt(p) {
     if (q.deathDate || q.deathPlace) parts.push('gestorben ' + [q.deathDate, q.deathPlace ? 'in ' + q.deathPlace : ''].filter(Boolean).join(' '));
     if (q.occupation) parts.push('Beruf: ' + q.occupation);
     return parts.join(', ');
-  };
+}
+function claudePrompt(p) {
+  const line = personLine;
   const rel = [];
   if (P(p.father)) rel.push('- Vater: ' + line(P(p.father)));
   if (P(p.mother)) rel.push('- Mutter: ' + line(P(p.mother)));
@@ -589,19 +607,7 @@ Bitte beachte:
 3. Erfinde nichts. Wenn du nichts findest, sag es.
 4. Recherchiere nicht zu lebenden Personen.
 5. Sag mir zum Schluss, wo ich selbst weitersuchen kann (z. B. welche Pfarrei/welches Standesamt/Archiv für den Ort und die Zeit zuständig ist und ob die Kirchenbücher online sind).
-6. Schreib ganz am Ende eine Zusammenfassung GENAU in diesem Format (nur Zeilen, zu denen du etwas gefunden hast; Sicherheit = sicher, wahrscheinlich oder unsicher; Daten als TT.MM.JJJJ, JJJJ oder „um JJJJ“):
-
-### STAMMBAUM-DATEN
-GEBURT: TT.MM.JJJJ in Ort | Sicherheit | Quelle mit Link
-TOD: TT.MM.JJJJ in Ort | Sicherheit | Quelle mit Link
-BERUF: Beruf | Sicherheit | Quelle mit Link
-GEBURTSNAME: Name | Sicherheit | Quelle mit Link
-VATER: Vorname Nachname, geboren TT.MM.JJJJ in Ort, gestorben TT.MM.JJJJ in Ort | Sicherheit | Quelle mit Link
-MUTTER: Vorname Nachname geborene Mädchenname, geboren …, gestorben … | Sicherheit | Quelle mit Link
-EHEPARTNER: (gleiches Format wie VATER)
-KIND: (gleiches Format, eine Zeile pro Kind)
-GESCHWISTER: (gleiches Format, eine Zeile pro Bruder/Schwester)
-### ENDE`;
+6. ${CLAUDE_FORMAT}`;
 }
 function openResearch(id) {
   const p = P(id); if (!p) return;
@@ -624,7 +630,8 @@ function openResearch(id) {
     <p class="hint" style="font-size:.9rem">Wenn Claude geantwortet hat: Antwort kopieren und hier einfügen – die Funde erscheinen als Vorschläge zum Abhaken.</p>
     <button class="btn primary" id="impClaude" style="width:100%">📥 Claude-Antwort einfügen</button>
     <h3>📝 Selbst etwas gefunden?</h3>
-    <button class="btn" id="addFind" style="width:100%">Fund eintragen</button>
+    <p class="hint" style="font-size:.9rem">Text aus einem Treffer (z. B. Google) kopieren und einfügen – die App erkennt Daten darin.</p>
+    <button class="btn" id="addFind" style="width:100%">📥 Fund übernehmen</button>
     <div class="actions"><button class="btn wide" id="close">Schließen</button></div>
     <div class="toast" id="toast" hidden></div>`);
   const toast = msg => { const t = dlg.querySelector('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 3000); };
@@ -707,6 +714,43 @@ function buildSuggestions(p, items) {
   });
   return out;
 }
+const ROLE_LABEL = { father: 'Vater', mother: 'Mutter', spouse: 'Partner/in', child: 'Kind', sibling: 'Geschwister' };
+// Vorschläge als Liste zum Abhaken anzeigen
+function renderSugs(sugs) {
+  return '<h3>Vorschläge – abhaken, was stimmt:</h3>' + sugs.map((s, i) => {
+    let txt;
+    if (s.type === 'field') txt = `${s.who ? '<b>' + esc(s.who) + '</b> – ' : ''}${FIELD_LABEL[s.field]}: <b>${esc(s.value)}</b>${s.old ? ` <span class="warn">(bisher: ${esc(s.old)})</span>` : ''}`;
+    else {
+      const d = s.data;
+      txt = `Neue Person (${ROLE_LABEL[s.role]}): <b>${esc([d.firstName, d.lastName].filter(Boolean).join(' '))}</b>${d.birthName ? ' geb. ' + esc(d.birthName) : ''} ${esc(lifeSpan(d))}${d.birthPlace ? ', ' + esc(d.birthPlace) : ''}`
+        + (s.replaces ? ` <span class="warn">(ersetzt bisherige/n: ${esc(s.replaces)})</span>` : '')
+        + (s.disabled ? ' <span class="warn">(geht erst, wenn Vater oder Mutter eingetragen sind)</span>' : '');
+    }
+    return `<label class="sug"><input type="checkbox" data-i="${i}"${s.checked ? ' checked' : ''}${s.disabled ? ' disabled' : ''}>
+      <span>${txt}<br><small class="sure-${s.sure}">${s.sure}</small>${s.source ? ' <small>· ' + linkify(s.source) + '</small>' : ''}</span></label>`;
+  }).join('');
+}
+// Abgehakte Vorschläge übernehmen (Felder setzen, neue Verwandte anlegen und verknüpfen, Quellen notieren)
+function applySuggestions(p, chosen) {
+  const order = { father: 0, mother: 1, spouse: 3, child: 4, sibling: 5 };
+  chosen.sort((a, b) => (a.type === 'field' ? 2 : order[a.role]) - (b.type === 'field' ? 2 : order[b.role]));
+  const srcLine = (q, what, s) => { if (s.source) q.sources = (q.sources ? q.sources + '\n' : '') + `${what}: ${s.source} (${s.sure})`; };
+  chosen.forEach(s => {
+    if (s.type === 'field') {
+      const q = P(s.target); q[s.field] = s.value;
+      if (/^death/.test(s.field)) q.status = 'verstorben';
+      srcLine(q, FIELD_LABEL[s.field], s);
+    } else {
+      const d = s.data, by = yearOf(d.birthDate);
+      const np = newPerson({ firstName: d.firstName || '', lastName: d.lastName || '', birthName: d.birthName || '',
+        birthDate: d.birthDate || '', birthPlace: d.birthPlace || '', deathDate: d.deathDate || '', deathPlace: d.deathPlace || '', occupation: d.occupation || '',
+        gender: s.role === 'father' ? 'm' : s.role === 'mother' ? 'w' : (d.gender || 'u'),
+        status: d.deathDate || d.deathPlace || (by && by <= THIS_YEAR - PROTECT_YEARS) ? 'verstorben' : (d.status || 'unbekannt') });
+      srcLine(np, 'Angaben', s);
+      data.persons[np.id] = np; link(p.id, s.role, np.id);
+    }
+  });
+}
 function importClaude(id) {
   const p = P(id); if (!p) return;
   const dlg = openModal(`
@@ -719,7 +763,6 @@ function importClaude(id) {
     <div id="cOut"></div>
     <div class="actions"><button class="btn" id="cancel">Zurück</button><button class="btn primary" id="ok" disabled>✓ Ausgewählte übernehmen</button></div>`);
   let sugs = [];
-  const roleLabel = { father: 'Vater', mother: 'Mutter', spouse: 'Partner/in', child: 'Kind', sibling: 'Geschwister' };
   const show = () => {
     const items = parseClaudeBlock(dlg.querySelector('#cText').value), out = dlg.querySelector('#cOut');
     if (!items) {
@@ -728,18 +771,7 @@ function importClaude(id) {
     }
     sugs = buildSuggestions(p, items);
     if (!sugs.length) { out.innerHTML = '<div class="research open">Keine neuen Angaben gefunden – alles ist schon eingetragen.</div>'; dlg.querySelector('#ok').disabled = true; return; }
-    out.innerHTML = '<h3>Vorschläge – abhaken, was stimmt:</h3>' + sugs.map((s, i) => {
-      let txt;
-      if (s.type === 'field') txt = `${s.who ? '<b>' + esc(s.who) + '</b> – ' : ''}${FIELD_LABEL[s.field]}: <b>${esc(s.value)}</b>${s.old ? ` <span class="warn">(bisher: ${esc(s.old)})</span>` : ''}`;
-      else {
-        const d = s.data;
-        txt = `Neue Person (${roleLabel[s.role]}): <b>${esc([d.firstName, d.lastName].filter(Boolean).join(' '))}</b>${d.birthName ? ' geb. ' + esc(d.birthName) : ''} ${esc(lifeSpan(d))}${d.birthPlace ? ', ' + esc(d.birthPlace) : ''}`
-          + (s.replaces ? ` <span class="warn">(ersetzt bisherige/n: ${esc(s.replaces)})</span>` : '')
-          + (s.disabled ? ' <span class="warn">(geht erst, wenn Vater oder Mutter eingetragen sind)</span>' : '');
-      }
-      return `<label class="sug"><input type="checkbox" data-i="${i}"${s.checked ? ' checked' : ''}${s.disabled ? ' disabled' : ''}>
-        <span>${txt}<br><small class="sure-${s.sure}">${s.sure}</small>${s.source ? ' <small>· ' + linkify(s.source) + '</small>' : ''}</span></label>`;
-    }).join('');
+    out.innerHTML = renderSugs(sugs);
     dlg.querySelector('#ok').disabled = false;
   };
   dlg.querySelector('#cPaste').onclick = async () => {
@@ -751,52 +783,129 @@ function importClaude(id) {
   dlg.querySelector('#ok').onclick = () => {
     const chosen = [...dlg.querySelectorAll('#cOut input:checked')].map(x => sugs[+x.dataset.i]);
     if (!chosen.length) { alert('Bitte mindestens einen Vorschlag abhaken.'); return; }
-    const order = { father: 0, mother: 1, spouse: 3, child: 4, sibling: 5 };
-    chosen.sort((a, b) => (a.type === 'field' ? 2 : order[a.role]) - (b.type === 'field' ? 2 : order[b.role]));
-    const srcLine = (q, what, s) => { if (s.source) q.sources = (q.sources ? q.sources + '\n' : '') + `${what}: ${s.source} (${s.sure})`; };
-    chosen.forEach(s => {
-      if (s.type === 'field') {
-        const q = P(s.target); q[s.field] = s.value;
-        if (/^death/.test(s.field)) q.status = 'verstorben';
-        srcLine(q, FIELD_LABEL[s.field], s);
-      } else {
-        const d = s.data, by = yearOf(d.birthDate);
-        const np = newPerson({ firstName: d.firstName || '', lastName: d.lastName || '', birthName: d.birthName || '',
-          birthDate: d.birthDate || '', birthPlace: d.birthPlace || '', deathDate: d.deathDate || '', deathPlace: d.deathPlace || '', occupation: d.occupation || '',
-          gender: s.role === 'father' ? 'm' : s.role === 'mother' ? 'w' : (d.gender || 'u'),
-          status: d.deathDate || d.deathPlace || (by && by <= THIS_YEAR - PROTECT_YEARS) ? 'verstorben' : (d.status || 'unbekannt') });
-        srcLine(np, 'Angaben', s);
-        data.persons[np.id] = np; link(p.id, s.role, np.id);
-      }
-    });
+    applySuggestions(p, chosen);
     const date = new Date().toLocaleDateString('de-DE');
     p.notes = (p.notes ? p.notes + '\n\n' : '') + `[Claude-Recherche ${date}] ${chosen.length} Angabe(n) übernommen.`;
     save(); closeModal(); refresh(); openDetail(id);
   };
 }
 
-// Fund mit Quelle zur Person hinzufügen (wird an Notizen und Quellen angehängt)
-function addFinding(id) {
+// ---- Fund übernehmen: Text von einer Webseite / aus Google (eingefügt oder über „Teilen“) ----
+function findingPrompt(p, text, url) {
+  return `Ich erforsche meine Familiengeschichte (rein privat). Ich habe einen möglichen Fund zu dieser verstorbenen Person:
+
+Person: ${personLine(p)}
+
+Gefundener Text${url ? ' (Quelle: ' + url + ')' : ''}:
+"""
+${text}
+"""
+
+Bitte prüfe, ob der Fund wirklich zu dieser Person passt (Achtung Namensvettern!), und erkläre kurz, warum. Erfinde nichts.
+${CLAUDE_FORMAT}`;
+}
+function addFinding(id, pre = {}) {
   const p = P(id); if (!p) return;
+  const prot = isProtected(p);
+  const firstUrl = t => (String(t || '').match(/https?:\/\/[^\s"<>]+/) || [''])[0];
+  const preText = [pre.title, pre.text].filter(Boolean).join('\n').trim();
   const dlg = openModal(`
-    <h2>📝 Fund eintragen: ${esc(fullName(p))}</h2>
-    <p class="hint">Was hast du herausgefunden? Du kannst auch die Antwort von Claude hier einfügen. Das wird an die Notizen angehängt – Name und Daten änderst du danach selbst unter „Bearbeiten“, wenn du dir sicher bist.</p>
-    <label>Was wurde gefunden?</label><textarea id="fText" placeholder="z. B. Taufe am 18.06.1880 in St. Jakob, Pate: Johann Weber"></textarea>
-    <label>Quelle (Link oder Beschreibung)</label><input id="fSrc" placeholder="z. B. FamilySearch-Link oder Kirchenbuch St. Jakob 1880, S. 45">
-    <label>Wie sicher ist das?</label>
+    <h2>📥 Fund übernehmen: ${esc(fullName(p))}</h2>
+    <p class="hint">Text aus einem Google-Treffer oder von einer Webseite: markieren → <b>Kopieren</b> → hier einfügen.
+      Tipp: In Chrome geht es noch schneller über <b>Teilen → Stammbaum</b>.</p>
+    <button class="btn" id="fPaste" style="width:100%">📋 Aus Zwischenablage einfügen</button>
+    <label>Gefundener Text</label><textarea id="fText" placeholder="z. B. „Johann Weber, * 12.3.1850 in Rothenburg, † 1920 …“">${esc(preText)}</textarea>
+    <label>Quelle (Link oder Beschreibung)</label><input id="fSrc" value="${esc(pre.url || firstUrl(preText))}" placeholder="z. B. Link zur Seite oder Kirchenbuch St. Jakob 1880, S. 45">
+    <label>Wie sicher passt das zu ${esc(p.firstName || 'der Person')}?</label>
     <div class="seg" id="fSure"><button type="button" data-v="sicher">sicher</button><button type="button" data-v="wahrscheinlich" class="on">wahrscheinlich</button><button type="button" data-v="unsicher">unsicher</button></div>
-    <div class="actions"><button class="btn" id="cancel">Abbrechen</button><button class="btn primary" id="ok">💾 Speichern</button></div>`);
-  let sure = 'wahrscheinlich';
-  dlg.querySelectorAll('#fSure button').forEach(b => b.onclick = () => { sure = b.dataset.v; dlg.querySelectorAll('#fSure button').forEach(x => x.classList.toggle('on', x === b)); });
-  dlg.querySelector('#cancel').onclick = () => openResearch(id);
+    <button class="btn primary" id="fParse" style="width:100%;margin-top:12px">🔍 Daten im Text erkennen</button>
+    ${prot ? '' : '<button class="btn" id="fClaude" style="width:100%;margin-top:8px">🤖 Lieber von Claude prüfen lassen</button>'}
+    <div id="fOut"></div>
+    <div class="actions"><button class="btn" id="cancel">Abbrechen</button><button class="btn primary" id="ok">💾 Speichern</button></div>
+    <div class="toast" id="toast" hidden></div>`);
+  let sure = 'wahrscheinlich', sugs = [];
+  const T = () => dlg.querySelector('#fText').value.trim(), SRC = () => dlg.querySelector('#fSrc').value.trim();
+  const toast = msg => { const t = dlg.querySelector('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 4000); };
+  dlg.querySelectorAll('#fSure button').forEach(b => b.onclick = () => {
+    sure = b.dataset.v; dlg.querySelectorAll('#fSure button').forEach(x => x.classList.toggle('on', x === b));
+    if (sugs.length) parse();
+  });
+  const parse = () => {
+    const out = dlg.querySelector('#fOut'), text = T().replace(/https?:\/\/\S+/g, ' ');
+    if (!text) { out.innerHTML = ''; return; }
+    const r = parseSpoken(text), items = [];
+    const ev = (d, pl) => [d, pl ? 'in ' + pl : ''].filter(Boolean).join(' ');
+    if (r.birthDate || r.birthPlace) items.push({ key: 'GEBURT', value: ev(r.birthDate, r.birthPlace) });
+    if (r.deathDate || r.deathPlace) items.push({ key: 'TOD', value: ev(r.deathDate, r.deathPlace) });
+    if (r.occupation) items.push({ key: 'BERUF', value: r.occupation });
+    if (r.birthName) items.push({ key: 'GEBURTSNAME', value: r.birthName });
+    items.forEach(it => { it.sure = sure; it.source = SRC(); });
+    sugs = buildSuggestions(p, items);
+    const words = [r.firstName, r.lastName].filter(Boolean).join(' ').split(/\s+/).length;
+    const other = r.firstName && words <= 4 && !sameName(p, r)
+      ? `<div class="research locked">⚠️ Im Text steht <b>${esc([r.firstName, r.lastName].filter(Boolean).join(' '))}</b> – ist das wirklich ${esc(fullName(p))}?</div>` : '';
+    if (other) sugs.forEach(x => x.checked = false);   // anderer Name: nichts vorab anhaken
+    out.innerHTML = other + (sugs.length ? renderSugs(sugs)
+      : '<div class="research open">Ich habe keine neuen Daten erkannt. Der Text wird trotzdem als Notiz gespeichert.' + (prot ? '' : ' Bei längeren Texten hilft „Von Claude prüfen lassen“.') + '</div>');
+  };
+  dlg.querySelector('#fParse').onclick = parse;
+  dlg.querySelector('#fPaste').onclick = async () => {
+    try { const t = await navigator.clipboard.readText(); if (t) { dlg.querySelector('#fText').value = t.trim(); if (!SRC()) dlg.querySelector('#fSrc').value = firstUrl(t); parse(); return; } } catch (e) {}
+    dlg.querySelector('#fText').focus();
+  };
+  const cl = dlg.querySelector('#fClaude');
+  if (cl) cl.onclick = async () => {
+    if (!T()) { alert('Bitte zuerst den gefundenen Text einfügen.'); return; }
+    const ok = await copyText(findingPrompt(p, T(), SRC()));
+    window.open('https://claude.ai/new', '_blank', 'noopener');
+    toast(ok ? '✓ Text kopiert – in Claude einfügen. Die Antwort dann über „Recherche → Claude-Antwort einfügen“ übernehmen.' : 'Kopieren hat nicht geklappt.');
+  };
+  dlg.querySelector('#cancel').onclick = () => prot ? (closeModal(), openDetail(id)) : openResearch(id);
   dlg.querySelector('#ok').onclick = () => {
-    const t = dlg.querySelector('#fText').value.trim(), s = dlg.querySelector('#fSrc').value.trim();
+    const t = T(), s = SRC();
     if (!t && !s) { alert('Bitte etwas eintragen.'); return; }
+    const chosen = [...dlg.querySelectorAll('#fOut input:checked')].map(x => sugs[+x.dataset.i]);
+    applySuggestions(p, chosen);
     const date = new Date().toLocaleDateString('de-DE');
-    if (t) p.notes = (p.notes ? p.notes + '\n\n' : '') + `[Recherche ${date}, ${sure}] ${t}`;
-    if (s) p.sources = (p.sources ? p.sources + '\n' : '') + s;
+    if (t) p.notes = (p.notes ? p.notes + '\n\n' : '') + `[Fund ${date}, ${sure}] ${t.length > 800 ? t.slice(0, 800) + ' …' : t}`;
+    if (s && !chosen.some(c => c.source)) p.sources = (p.sources ? p.sources + '\n' : '') + s;
     save(); closeModal(); refresh(); openDetail(id);
   };
+  if (preText) parse();
+}
+
+// ---- „Teilen → Stammbaum“ aus Chrome: Person auswählen, dann Fund übernehmen ----
+function pickPersonFor(pre) {
+  const list = sortedPersons();
+  if (!list.length) { alert('Lege zuerst eine Person an.'); return; }
+  // Personen, deren Name im geteilten Text vorkommt, nach oben
+  const txt = [pre.title, pre.text].join(' ').toLowerCase();
+  const named = list.filter(p => p.firstName && txt.includes(p.firstName.split(/\s+/)[0].toLowerCase()) && [p.lastName, p.birthName].some(n => n && txt.includes(n.toLowerCase())));
+  const recent = named.concat([P(sheetId), P(data.focusId)].filter(Boolean));
+  const dlg = openModal(`
+    <h2>📥 Geteilter Fund</h2>
+    <div class="note" style="font-size:.85rem;max-height:120px;overflow:auto">${esc([pre.title, pre.text, pre.url].filter(Boolean).join('\n'))}</div>
+    <label>Zu welcher Person gehört das?</label>
+    <input id="pSearch" type="search" placeholder="🔍 Name suchen …">
+    <div id="pList" style="margin-top:8px"></div>
+    <div class="actions"><button class="btn wide" id="cancel">Abbrechen</button></div>`);
+  const draw = () => {
+    const q = dlg.querySelector('#pSearch').value.trim().toLowerCase();
+    const hit = q ? list.filter(p => (fullName(p) + ' ' + p.birthName).toLowerCase().includes(q)) : [...new Set(recent.concat(list))];
+    dlg.querySelector('#pList').innerHTML = hit.slice(0, 40).map(p => `<div class="row g-${p.gender}" data-pick="${p.id}">${avatarHTML(p)}<div><div class="nm">${esc(fullName(p))}</div><div class="sub">${esc(lifeSpan(p))}</div></div></div>`).join('');
+  };
+  dlg.querySelector('#pSearch').oninput = draw; draw();
+  dlg.querySelector('#pList').onclick = e => { const r = e.target.closest('[data-pick]'); if (r) addFinding(r.dataset.pick, pre); };
+  dlg.querySelector('#cancel').onclick = closeModal;
+}
+function checkShared() {
+  const q = new URLSearchParams(location.search);
+  const pre = { title: q.get('share_title') || '', text: q.get('share_text') || '', url: q.get('share_url') || '' };
+  if (!pre.title && !pre.text && !pre.url) return;
+  history.replaceState(null, '', location.pathname);
+  // Chrome schickt den Link manchmal im Text mit
+  if (!pre.url) { const m = pre.text.match(/https?:\/\/[^\s]+/); if (m) { pre.url = m[0]; pre.text = pre.text.replace(m[0], '').trim(); } }
+  pickPersonFor(pre);
 }
 
 sheet.addEventListener('click', e => {
@@ -809,6 +918,7 @@ sheet.addEventListener('click', e => {
   else if (act === 'root') { data.rootId = id; save(); openDetail(id); }
   else if (act === 'delete') deletePerson(id);
   else if (act === 'research') openResearch(id);
+  else if (act === 'finding') addFinding(id);
   else addRelative(id, act);
 });
 
@@ -1579,6 +1689,8 @@ function loadDemo() {
 
 // ====================== Start ======================
 renderTree(true);
+checkShared();
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
 </body>
 </html>

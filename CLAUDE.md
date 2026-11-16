@@ -9,7 +9,7 @@ keine App für Dritte, keine Stammbäume über fremde Personen.
 - **Repository:** `marchens1977/Stammbaum`
 
 ### Technischer Aufbau
-- `index.html` – die ganze App in einer Datei (Aussehen + Logik). Oben im Skript: Einstellungen
+- `index.html` – die ganze App in einer Datei (Aussehen + Logik). Dazu `manifest.json` + `sw.js` + `icon-192/512.png` (installierbar, Teilen-Ziel). Oben im Skript: Einstellungen
   (Kartengröße, Anzahl Generationen, Schutzgrenze `PROTECT_YEARS`).
 - Daten liegen im Browser (localStorage, Schlüssel `stammbaum-daten-v1`), **nie im Repository**.
 - Sicherung: JSON-Datei; Austausch: GEDCOM 5.5.1 (Export + Import).
@@ -45,6 +45,7 @@ keine App für Dritte, keine Stammbäume über fremde Personen.
 | 2026-11-16 | „📨 Fragen (WhatsApp/SMS)“ auf Wunsch wieder entfernt |
 | 2026-11-16 | **Claude-Antwort übernehmen:** Claude-Text verlangt am Ende einen Block `### STAMMBAUM-DATEN … ### ENDE` (GEBURT/TOD/BERUF/GEBURTSNAME/VATER/MUTTER/EHEPARTNER/KIND/GESCHWISTER: Wert \| Sicherheit \| Quelle). „📥 Claude-Antwort einfügen“ zeigt Vorschläge zum Abhaken (vorhandene Verwandte werden per Kölner Phonetik erkannt und ergänzt, sonst neu angelegt + verknüpft; Quelle wird zu den Quellen geschrieben). Vorab angehakt: leere Felder bzw. genauere Angaben, nicht „unsicher“. |
 | 2026-11-16 | **GEDCOM hinzufügen statt ersetzen:** Doppelte (gleicher Name + gleiches Geburtsjahr) werden zusammengeführt, nur leere Felder ergänzt (`mergePersons`) |
+| 2026-11-16 | **Fund übernehmen + Teilen:** App ist installierbar (`manifest.json`, `sw.js` = immer zuerst aus dem Netz, Icons). Über Chrome „Teilen → Stammbaum“ (Web Share Target, Parameter share_title/share_text/share_url) kommt Text/Link in die App → Person wählen (passende Namen oben) → „📥 Fund übernehmen“: Daten im Text erkennen → Vorschläge zum Abhaken; Text als Notiz, Link als Quelle; bei anderem Namen Warnung und nichts vorab angehakt. Bei Verstorbenen zusätzlich „🤖 von Claude prüfen lassen“ (Text + Fund → STAMMBAUM-DATEN). Auch bei Lebenden verfügbar (nur lokal, ohne Claude). |
 | 2026-11-16 | Foto-Tipp im Einfügen-Bereich (Galerie „T“/Google Lens → kopieren → einfügen); Schutz: Claude-Antwort im Personen-Formular wird erkannt und umgeleitet |
 
 ## 4. Nächste Schritte

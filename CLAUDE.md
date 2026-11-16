@@ -16,7 +16,7 @@ keine App für Dritte, keine Stammbäume über fremde Personen.
 - Datumsfelder bleiben Freitext (für „um 1890“ usw.), werden aber vereinheitlicht (`normDate`): TT.MM.JJJJ, MM.JJJJ, JJJJ, „um/vor/nach JJJJ“.
 
 ## 2. Wichtige Regeln und Entscheidungen
-- **Datenschutz:** Keine Familiendaten, Sicherungen oder GEDCOM-Dateien ins Repository hochladen.
+- **Datenschutz:** Keine Familiendaten, Sicherungen oder GEDCOM-Dateien ins Repository hochladen. **Auch keine echten Namen aus Screenshots/Texten des Nutzers in Code-Kommentaren, Tagebuch oder Commit-Texten** – immer erfundene Beispiele (Familie Weber usw.).
 - **Schutz Lebender (Entscheidung des Nutzers, 2026-11-16):**
   - **Verstorbene** (Status „verstorben“, Sterbedatum/-ort oder vor mehr als 110 Jahren geboren – `PROTECT_YEARS`):
     volle Recherche (Quellenliste + Text für Claude), egal wann geboren.

@@ -216,7 +216,7 @@ const MAX_ANCESTOR_GENS = 3;      // wie viele Generationen nach oben (Eltern, G
 const MAX_DESC_GENS = 2;          // wie viele Generationen nach unten (Kinder, Enkel)
 const PROTECT_YEARS = 110;        // wer vor mehr als so vielen Jahren geboren wurde, gilt als verstorben
 const STORE_KEY = 'stammbaum-daten-v1';
-const APP_VERSION = '2026-11-16 Nr. 20';   // bei jeder Änderung hochzählen – steht unten im Menü
+const APP_VERSION = '2026-11-16 Nr. 21';   // bei jeder Änderung hochzählen – steht unten im Menü
 const THIS_YEAR = new Date().getFullYear();
 
 // ====================== Daten ======================
@@ -756,7 +756,7 @@ function buildSuggestions(p, items) {
       } else {
         const replaces = (role === 'father' && P(p.father)) || (role === 'mother' && P(p.mother));
         const noParents = role === 'sibling' && !P(p.father) && !P(p.mother) && !items.some(x => x.key === 'VATER' || x.key === 'MUTTER');
-        out.push(Object.assign({ type: 'new', role, relLabel: it.relLabel || '', partnerOf: it.partnerOf || '', data: r, replaces: replaces ? fullName(replaces) : '', disabled: noParents,
+        out.push(Object.assign({ type: 'new', role, relLabel: it.relLabel || '', partnerOf: it.partnerOf || '', childOf: it.childOf || '', data: r, replaces: replaces ? fullName(replaces) : '', disabled: noParents,
           checked: !replaces && !noParents && base.sure !== 'unsicher' }, base));
       }
     }
@@ -773,7 +773,7 @@ function renderSugs(sugs) {
       const d = s.data;
       const sel = `<select class="rolesel" data-r="${i}">${Object.keys(ROLE_LABEL).map(k => `<option value="${k}"${k === s.role ? ' selected' : ''}>${ROLE_LABEL[k]}</option>`).join('')}</select>`;
       txt = `Neue Person: <b>${esc([d.firstName, d.lastName].filter(Boolean).join(' '))}</b>${d.birthName ? ' geb. ' + esc(d.birthName) : ''} ${esc(lifeSpan(d))}${d.birthPlace ? ', ' + esc(d.birthPlace) : ''}`
-        + (s.relLabel ? ` <span class="hint">(laut Text: ${esc(s.relLabel)}${s.partnerOf ? ' – wird mit ihr/ihm verbunden' : s.role === 'other' ? ' – wird ohne Verbindung angelegt' : ''})</span>` : '')
+        + (s.relLabel ? ` <span class="hint">(laut Text: ${esc(s.relLabel)}${s.partnerOf || s.childOf ? ' – wird verbunden, wenn angehakt' : s.role === 'other' ? ' – wird ohne Verbindung angelegt' : ''})</span>` : '')
         + `<br>als ${sel}`
         + (s.replaces ? ` <span class="warn">(ersetzt bisherige/n: ${esc(s.replaces)})</span>` : '')
         + (s.disabled ? ' <span class="warn">(geht erst, wenn Vater oder Mutter eingetragen sind)</span>' : '');
@@ -810,7 +810,9 @@ function applySuggestions(p, chosen) {
       srcLine(np, 'Angaben', s);
       data.persons[np.id] = np;
       const mate = s.role === 'other' && s.partnerOf ? Object.values(data.persons).find(q => q.id !== np.id && sameName(q, parseSpoken(s.partnerOf)) && (childrenOf(p.id).includes(q) || chosen.some(c => c.data && sameName(c.data, q)))) : null;
+      const par = s.role === 'other' && s.childOf ? Object.values(data.persons).find(q => q.id !== np.id && sameName(q, parseSpoken(s.childOf)) && (childrenOf(p.id).includes(q) || chosen.some(c => c.data && sameName(c.data, q)))) : null;
       if (mate) { link(mate.id, 'spouse', np.id); np.notes = `Laut Fund: Partner/in von ${fullName(mate)}.`; }
+      else if (par) { link(par.id, 'child', np.id); np.notes = `Laut Fund: Kind von ${fullName(par)}.`; }
       else if (s.role === 'other') np.notes = `Laut Fund: ${s.relLabel || 'Verwandte/r'} von ${fullName(p)} – Verbindung im Stammbaum bitte selbst setzen.`;
       else if (s.role === 'sibling' && !P(p.father) && !P(p.mother)) np.notes = `Laut Fund: Geschwister von ${fullName(p)} – Eltern fehlen noch, deshalb noch nicht verbunden.`;
       else link(p.id, s.role, np.id);
@@ -1006,6 +1008,7 @@ function namesInText(text, p) {
   let m;
   while ((m = re.exec(text)) && out.length < 40) {
     if (!FIRST_SET.has(m[1])) { re.lastIndex = m.index + m[1].length; continue; }
+    if (text[m.index - 1] === '(') continue;   // Spitzname in Klammern („Friedrich (Fritz) Weber“)
     const rest = m[2].trim().split(/\s+/).filter(Boolean).filter(w => !/^(Und|Mit|Die|Der|Das|In|Im|Am)$/.test(w));
     // weitere Vornamen dazunehmen, letzter Teil ist der Nachname
     let name = [m[1]].concat(rest).join(' ');
@@ -1034,42 +1037,48 @@ function relOfWord(w) {
 }
 function obituaryNames(raw, p) {
   const text = String(raw || '');
-  const trig = text.match(/(?:In\s+(?:Liebe(?:\s+und\s+Dankbarkeit)?|stiller\s+Trauer|tiefer\s+Trauer|Dankbarkeit|Liebe\s+und\s+Trauer)|Es\s+trauern|In\s+Liebe\s+und\s+Dankbarkeit)\s*[:,]?/i);
+  const trig = text.match(/(?:In\s+(?:Liebe(?:\s+und\s+Dankbarkeit)?|stiller\s+Trauer|tiefer\s+Trauer|Dankbarkeit|Liebe\s+und\s+Trauer|Trauer\s+und\s+Dankbarkeit)|Es\s+trauern|(?:nehmen|nahmen)\s+(?:wir\s+)?Abschied|Abschied\s+nehmen)[^\n]*\n?/i);
   if (!trig) return [];
   // Wer ist der/die Verstorbene für die Unterzeichner? („um unsere liebe Mutter“ → Unterzeichner sind Kinder)
   const before = text.slice(0, trig.index);
   const um = before.match(/\b(?:um|von)\s+(?:unsere[nmr]?|meine[nmr]?|unser|mein)\s+(?:(?:liebe[nmr]?|gute[nmr]?|herzensgute[nmr]?|treue[nmr]?)\s+)*(Mutter|Mama|Vater|Papa|Oma|Opa|Mann|Ehemann|Frau|Ehefrau|Bruder|Schwester)/i);
-  let def = ['KIND', ''];
-  if (um) { const w = um[1].toLowerCase(); if (/mann|frau/.test(w)) def = ['EHEPARTNER', '']; else if (/bruder|schwester/.test(w)) def = ['GESCHWISTER', '']; }
-  let after = text.slice(trig.index + trig[0].length, trig.index + trig[0].length + 700);
+  let def = ['KIND', ''], hint = false;
+  if (um) { hint = true; const w = um[1].toLowerCase(); if (/mann|frau/.test(w)) def = ['EHEPARTNER', '']; else if (/bruder|schwester/.test(w)) def = ['GESCHWISTER', '']; }
+  const after = text.slice(trig.index + trig[0].length, trig.index + trig[0].length + 900);
   let lines = after.split(/\n/).map(l => l.trim()).filter(Boolean);
-  if (lines.length <= 1) lines = after.split(/[;]|,\s+(?=[A-ZÄÖÜ])/).map(l => l.trim()).filter(Boolean);
+  if (lines.length <= 1) lines = after.split(/[;]|,\s+(?=[A-ZÄÖÜ][a-zäöüß]+\s+(?:und|&)\s)/).map(l => l.trim()).filter(Boolean);
   const out = [], fam = p.lastName || p.birthName || '';
-  for (const line of lines.slice(0, 14)) {
-    if (/Trauerfeier|Beerdigung|Beisetzung|Urnen|findet|statt|Uhr|Friedhof|Kirche|Traueradresse|Anschrift|Kondolenz|Spende|^\d/.test(line)) break;
-    let l = line.replace(/\bgeb\.\s*/g, 'geborene ').replace(/\s+mit\s+Famili\w*|\s+und\s+Famili\w*|\s+mit\s+allen\s+Angehörigen|\s+im\s+Namen\s+aller\s+Angehörigen/gi, '').replace(/[.:]+$/, '');
+  let lineNo = 0;
+  for (const line of lines.slice(0, 16)) {
+    if (/Trauerfeier|Beerdigung|Beisetzung|Urnen|Abschiedsfeier|findet|statt|Uhr|Friedhof|Kirche|Traueradresse|Anschrift|Kondolenz|Spende|^sowie\b|^und\s+alle|Angehörigen\s+und|^\d/i.test(line)) break;
+    let l = line.replace(/\bgeb\.\s*/g, 'geborene ').replace(/\s*\([^)]*\)/g, '')
+      .replace(/\s+(?:mit|und|&)\s+Famili\w*|\s+mit\s+allen\s+Angehörigen|\s+im\s+Namen\s+aller\s+Angehörigen/gi, '').replace(/[.:]+$/, '');
     let lineRel = null;
     const lm = l.match(/^(?:Deine?|Eure?|Ihre?|Seine?|Unsere?|Die)?\s*([A-ZÄÖÜ][a-zäöüß]+)\b\s*:?\s*/);
     if (lm && relOfWord(lm[1])) { lineRel = relOfWord(lm[1]); l = l.slice(lm[0].length); }
-    const chunks = l.split(/,\s*|\s+und\s+|\s+sowie\s+|\s+mit\s+/);
+    const chunks = l.split(/\s*,\s*|\s+und\s+|\s*&\s*|\s*\+\s*|\s+sowie\s+|\s+mit\s+/).map(c => c.trim()).filter(Boolean);
     const names = []; let lastFull = '';
     chunks.forEach((c, i) => {
-      c = c.trim(); let rel = lineRel || def;
+      let rel = lineRel, partner = false, childOf = false;
       const cm = c.match(/^([A-ZÄÖÜ][a-zäöüß]+)\s+/);
-      let partner = false;
       if (cm && relOfWord(cm[1])) { const r = relOfWord(cm[1]); partner = i > 0 && r[0] === 'EHEPARTNER'; rel = partner ? ['ANDERE', 'Schwiegerkind'] : r; c = c.slice(cm[0].length); }
-      else if (i > 0 && !lineRel && /\bmit\s+/.test(l) && l.indexOf(c) > l.search(/\smit\s/)) { rel = ['ANDERE', 'Schwiegerkind']; partner = true; }
+      else if (!lineRel && i === 1) { rel = ['ANDERE', 'Schwiegerkind']; partner = true; }        // „Karl, Maria …“ → Maria ist Partnerin von Karl
+      else if (!lineRel && i >= 2) { rel = ['ANDERE', 'Enkel/in']; childOf = true; }            // „… Lena & Tim“ → Kinder von Karl
       const n = takeName(c); if (!n) return;
       const core = n.replace(/\s+geborene.*$/, '').replace(/\s+\d{4}.*$/, '').split(/\s+/);
       if (core.length >= 2) lastFull = core.slice(1).join(' ');
-      names.push({ n, rel, partnerOf: partner && names[0] ? names[0].n : '' });
+      names.push({ n, rel, partnerOf: partner && names[0] ? names[0].n : '', childOf: childOf && names[0] ? names[0].n : '' });
     });
-    names.forEach(({ n, rel, partnerOf }) => {
-      let v = n;
-      if (v.split(/\s+/).length === 1) v += ' ' + (lastFull || fam);
-      if (rel[0] === 'ANDERE' && rel[1] === 'Schwiegerkind' && v.split(/\s+/).length === 1) v += ' ' + (lastFull || fam);
-      let po = partnerOf; if (po && po.split(/\s+/).length === 1) po += ' ' + (lastFull || fam);
-      out.push({ key: rel[0], value: v.replace(/\bgeb\.\s*/g, 'geborene '), sure: 'unsicher', relLabel: po ? 'Partner/in von ' + po.replace(/\s+geborene.*$/, '') : rel[1], partnerOf: po });
+    if (!names.length) continue;
+    // Einzelner Name ganz oben (ohne „um unsere Mutter“-Hinweis) ist meist der Ehepartner / die Witwe
+    if (lineNo === 0 && names.length === 1 && !lineRel && !hint) names[0].rel = ['EHEPARTNER', ''];
+    lineNo++;
+    const withLast = x => (x && x.split(/\s+/).length === 1) ? x + ' ' + (lastFull || fam) : x;
+    names.forEach(({ n, rel, partnerOf, childOf }) => {
+      const r = rel || def, po = withLast(partnerOf), co = withLast(childOf);
+      out.push({ key: r[0], value: withLast(n).replace(/\bgeb\.\s*/g, 'geborene '), sure: 'unsicher',
+        relLabel: po ? 'Partner/in von ' + po.replace(/\s+geborene.*$/, '') : co ? 'Enkel/in – Kind von ' + co.replace(/\s+geborene.*$/, '') : r[1],
+        partnerOf: po, childOf: co });
     });
   }
   return out;
@@ -1189,6 +1198,14 @@ function addFinding(id, pre = {}) {
     <div class="seg" id="fSure"><button type="button" data-v="sicher">sicher</button><button type="button" data-v="wahrscheinlich" class="on">wahrscheinlich</button><button type="button" data-v="unsicher">unsicher</button></div>
     <button class="btn primary" id="fWiki" style="width:100%;margin-top:12px" hidden>📖 Daten aus Wikipedia holen</button>
     <button class="btn primary" id="fRead" style="width:100%;margin-top:12px" hidden>🌐 Seite / PDF auslesen</button>
+    <div class="research locked" id="fImgHint" hidden>🖼️ <b>Die Anzeige ist vermutlich ein Bild</b> (oder das ist eine Übersichtsseite mit vielen Anzeigen). Bilder kann die App nicht lesen. So geht es:
+      <ol style="margin:6px 0;padding-left:20px">
+        <li>Öffne die Anzeige groß und mach einen <b>Screenshot</b>.</li>
+        <li>Öffne den Screenshot in der <b>Galerie</b> und tippe auf das <b>„T“</b>-Symbol (Text erkennen) – oder nutze <b>Google Lens</b>.</li>
+        <li><b>Alles auswählen → Kopieren</b>.</li>
+        <li>Hier oben auf <b>„📋 Aus Zwischenablage einfügen“</b>.</li>
+      </ol>
+      Die App erkennt dann Daten und die Namen der Trauernden.</div>
     <div id="fSnips"></div>
     <div class="hint" id="fWikiMsg"></div>
     <button class="btn primary" id="fParse" style="width:100%;margin-top:12px">🔍 Daten im Text erkennen</button>
@@ -1213,7 +1230,7 @@ function addFinding(id, pre = {}) {
     if (trg >= 0) { const stop = relText.slice(trg).search(/Trauerfeier|Beerdigung|Beisetzung|Urnenbeisetzung|Weitere Anzeige|Traueradresse|Kondolenz/i); if (stop > 0) relText = relText.slice(0, trg + stop); }
     const relItems = extractRelatives(relText, p);
     // Sicherheitsnetz: alle weiteren Namen im Text (Verwandtschaft unbekannt, nicht vorab angehakt)
-    namesInText(relText, p).forEach(({ name, guessed, first }) => {
+    (listPage && T() === lastSnippet.trim() ? [] : namesInText(relText, p)).forEach(({ name, guessed, first }) => {
       const r = parseSpoken(name);
       if (sameName(p, r) || relItems.some(y => sameName(parseSpoken(y.value), r))) return;
       // nur Vorname im Text („mit Klaus“) und schon als Verwandter erkannt → nicht doppelt
@@ -1264,15 +1281,21 @@ function addFinding(id, pre = {}) {
   };
   const rBtn = dlg.querySelector('#fRead'), snipBox = dlg.querySelector('#fSnips');
   const isUrl = u => /^https?:\/\//i.test(u);
-  let pageText = '', snipPos = 0, lastSnippet = '';   // ganzer Seitentext (für Verwandte/Traueranzeigen weiter unten)
+  let pageText = '', snipPos = 0, lastSnippet = '', listPage = false;
+  const imageHint = dlg.querySelector('#fImgHint');   // ganzer Seitentext (für Verwandte/Traueranzeigen weiter unten)
   const useSnippet = x => { lastSnippet = x.text.replace(/^… | …$/g, ''); snipPos = x.start; dlg.querySelector('#fText').value = lastSnippet; wiki = null; parse(); };
   const readUrl = async () => {
+    imageHint.hidden = true;
     snipBox.innerHTML = '<div class="research open">⏳ Lese die Seite … (kann bei PDFs bis zu 30 Sekunden dauern)</div>';
     rBtn.disabled = true; snipBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
     try {
       const text = await readPage(SRC());
       const sn = findSnippets(p, text);
       pageText = text;
+      // Übersichtsseite (viele Anzeigen) oder Anzeige als Bild? Dann gibt es keinen lesbaren Anzeigentext
+      listPage = (text.match(/Traueranzeigen?\s+von\s/gi) || []).length >= 3 || /share\.google|google\.[a-z.]+\/(search|imgres)/i.test(SRC());
+      const hasDates = sn.some(x => /\d{1,2}\.\s?\d{1,2}\.\s?\d{4}|[*†]\s*\d/.test(x.text));
+      imageHint.hidden = !(listPage || !hasDates);
       if (!sn.length) {
         snipBox.innerHTML = `<div class="research locked">Der Name ${esc(p.lastName || p.birthName || '')} kommt auf der Seite nicht vor (oder die Seite ist ein Bild/Scan).` + (prot ? '' : ' Tipp: „🤖 Lieber von Claude prüfen lassen“.') + '</div>';
         return;
@@ -1497,6 +1520,7 @@ function parseSpoken(text) {
     if (!r.birthDate) r.birthDate = m[1]; if (!r.deathDate) { r.deathDate = m[2]; r.status = 'verstorben'; }
     name = clean(name.slice(0, m.index));
   }
+  name = name.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim();   // Spitznamen „(Fritz)“ weglassen
   if ((m = name.match(/^(herr|frau)\s+/i))) { r.gender = m[1].toLowerCase() === 'herr' ? 'm' : 'w'; name = name.slice(m[0].length); }
   name = name.replace(/[^A-Za-zÄÖÜäöüß\s'-]/g, ' ').trim();
   if (name) {

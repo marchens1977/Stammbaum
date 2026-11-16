@@ -216,6 +216,7 @@ const MAX_ANCESTOR_GENS = 3;      // wie viele Generationen nach oben (Eltern, G
 const MAX_DESC_GENS = 2;          // wie viele Generationen nach unten (Kinder, Enkel)
 const PROTECT_YEARS = 110;        // wer vor mehr als so vielen Jahren geboren wurde, gilt als verstorben
 const STORE_KEY = 'stammbaum-daten-v1';
+const APP_VERSION = '2026-11-16 Nr. 20';   // bei jeder Änderung hochzählen – steht unten im Menü
 const THIS_YEAR = new Date().getFullYear();
 
 // ====================== Daten ======================
@@ -804,7 +805,7 @@ function applySuggestions(p, chosen) {
       const d = s.data, by = yearOf(d.birthDate);
       const np = newPerson({ firstName: d.firstName || '', lastName: d.lastName || '', birthName: d.birthName || '',
         birthDate: d.birthDate || '', birthPlace: d.birthPlace || '', deathDate: d.deathDate || '', deathPlace: d.deathPlace || '', occupation: d.occupation || '',
-        gender: s.role === 'father' ? 'm' : s.role === 'mother' ? 'w' : (d.gender || 'u'),
+        gender: s.role === 'father' ? 'm' : s.role === 'mother' ? 'w' : (d.gender || genderOfFirst(d.firstName) || 'u'),
         status: d.deathDate || d.deathPlace || (by && by <= THIS_YEAR - PROTECT_YEARS) ? 'verstorben' : (d.status || 'unbekannt') });
       srcLine(np, 'Angaben', s);
       data.persons[np.id] = np;
@@ -988,9 +989,32 @@ function findSnippets(p, text) {
     if (first && sl.includes(first)) score += 3;
     if (/[*†✝]|geb\.|gest\.|geboren|gestorben|verstorben|getauft|beerdigt/i.test(sn)) score += 2;
     if (/\d{1,2}\.\s?\d{1,2}\.\s?\d{4}|\b1[5-9]\d\d\b|\b20[0-2]\d\b/.test(sn)) score += 1;
-    snips.push({ text: (start > 0 ? '… ' : '') + sn + (end < text.length ? ' …' : ''), score });
+    snips.push({ text: (start > 0 ? '… ' : '') + sn + (end < text.length ? ' …' : ''), score, start });
   });
   return snips.sort((a, b) => b.score - a.score).slice(0, 6);
+}
+
+// ---- Häufige Vornamen (zum Erkennen von Namen im Text und des Geschlechts) ----
+const FIRST_M = 'Adam Adolf Albert Albrecht Alexander Alfons Alfred Alois Andreas Anton Arnold Arthur August Axel Benedikt Benjamin Bernd Bernhard Bruno Carl Christian Christoph Claus Daniel David Dennis Dieter Dietrich Dirk Dominik Eberhard Eduard Egon Emil Erich Ernst Erwin Eugen Fabian Felix Ferdinand Florian Frank Franz Friedrich Fritz Georg Gerd Gerhard Gottfried Gottlieb Gregor Gustav Günter Günther Hans Harald Hartmut Heinrich Heinz Helmut Helmuth Herbert Hermann Horst Hubert Hugo Ignaz Jakob Jan Jens Joachim Johann Johannes Jonas Josef Joseph Julius Jörg Jürgen Kai Karl Kaspar Klaus Konrad Kurt Leo Leon Leonhard Lorenz Lothar Ludwig Lukas Manfred Marc Marcel Marco Mario Markus Martin Matthias Max Maximilian Michael Moritz Niklas Nikolaus Norbert Oliver Oskar Otto Paul Peter Philipp Rainer Ralf Reinhard Reinhold Richard Robert Roland Rolf Rudolf Rüdiger Sebastian Simon Stefan Stephan Sven Thomas Thorsten Tim Timo Tobias Torsten Ulrich Uwe Valentin Viktor Volker Walter Werner Wilhelm Willi Willy Wolfgang Xaver'.split(' ');
+const FIRST_W = 'Adelheid Agnes Alexandra Alice Amalie Andrea Angela Angelika Anja Anna Anne Annemarie Antje Antonia Auguste Babette Barbara Beate Berta Bertha Birgit Brigitte Carina Carola Caroline Charlotte Christa Christel Christiane Christina Christine Clara Claudia Cornelia Dagmar Daniela Dora Doris Dorothea Edith Elfriede Elisabeth Elise Elke Ella Elsa Else Emilie Emma Erika Erna Eva Franziska Frieda Friederike Gabriele Gerda Gertrud Gisela Greta Gudrun Hanna Hannah Hannelore Hedwig Heidi Heike Helene Helga Henriette Hermine Hilde Hildegard Ilse Inge Ingeborg Ingrid Irene Irmgard Jana Johanna Josefa Josephine Julia Juliane Jutta Karin Karla Karolina Katharina Kathrin Klara Kreszentia Kristina Laura Lea Lena Lieselotte Lina Lisa Louise Luise Magdalena Margarete Margaretha Margot Maria Marianne Marie Marion Martha Mathilde Melanie Mia Monika Nadine Nicole Olga Paula Pauline Petra Regina Renate Rita Rosa Rosemarie Ruth Sabine Sandra Sarah Silke Sofia Sophie Stefanie Susanne Therese Theresia Ursula Ute Verena Veronika Waltraud Wilhelmine Yvonne'.split(' ');
+const FIRST_SET = new Set(FIRST_M.concat(FIRST_W));
+function genderOfFirst(n) { const f = String(n || '').split(/\s+/)[0]; return FIRST_M.includes(f) ? 'm' : FIRST_W.includes(f) ? 'w' : ''; }
+// Alle Namen im Text, die mit einem bekannten Vornamen beginnen („Peter Weber“, „Petra“)
+function namesInText(text, p) {
+  const out = [], fam = p.lastName || p.birthName || '';
+  const re = /\b([A-ZÄÖÜ][a-zäöüß]+)((?:[ -][A-ZÄÖÜ][a-zäöüß]+){0,2})(\s+(?:geb\.|geborene)\s+[A-ZÄÖÜ][a-zäöüß-]+)?/g;
+  let m;
+  while ((m = re.exec(text)) && out.length < 40) {
+    if (!FIRST_SET.has(m[1])) { re.lastIndex = m.index + m[1].length; continue; }
+    const rest = m[2].trim().split(/\s+/).filter(Boolean).filter(w => !/^(Und|Mit|Die|Der|Das|In|Im|Am)$/.test(w));
+    // weitere Vornamen dazunehmen, letzter Teil ist der Nachname
+    let name = [m[1]].concat(rest).join(' ');
+    const guessed = !rest.length || FIRST_SET.has(rest[rest.length - 1]);
+    if (guessed) name += ' ' + fam;
+    if (m[3]) name += ' geborene ' + m[3].replace(/^\s*(geb\.|geborene)\s+/, '');
+    if (!out.some(o => o.name === name)) out.push({ name, guessed, first: m[1] });
+  }
+  return out;
 }
 
 // ---- Traueranzeigen: Namen der Trauernden (meist zeilenweise unter „In Liebe …“) ----
@@ -1058,9 +1082,11 @@ const NOT_NAMES = /^(Familie|Familien|Enkel|Enkelkinder|Urenkel|Angehörige|Alle
 function takeName(str) {
   str = String(str || '').trim().replace(/^[(\s]+/, '')
     .replace(/^(?:(?:im\s+Jahre?|am|im|um)\s+)?(?:\d{1,2}\.\s*(?:\d{1,2}\.|(?:Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember))\s*)?\d{4}\s+/, '')
-    .replace(/^(?:die|den|der|dem)\s+/i, '');
+    .replace(/^(?:(?:war|ist|wurde|die|den|der|dem|des|ein|eine|einen|einem|einer|spätere[nmr]?|bekannte[nmr]?|heutige[nmr]?)\s+)+/i, '');
   const m = str.match(NAME_RE); if (!m) return '';
   let w = m[0].split(/\s+/);
+  // Allgemein: Wort vor einem bekannten Vornamen ist eine Beschreibung („Maler Karl Weber“ → „Karl Weber“)
+  while (w.length >= 2 && !FIRST_SET.has(w[0]) && FIRST_SET.has(w[1])) w.shift();
   // Berufs-/Standesangaben vor dem Namen weglassen („des Bauern Michael Bauer“ → „Michael Bauer“)
   while (w.length >= 3 && /^(Bauern|Landwirts?|Kaufmanns?|Lehrers?|Pfarrers?|Schmied(e?s)?|Schneiders?|Arztes|Beamten|Gastwirts?|Handwerkers?|Tagelöhners?|Bürgermeisters?|Fabrikanten|Kaufmann|Herrn?|Witwe|Witwers?|Ehefrau|Ehemanns?|Gutsbesitzers?|Müllermeisters?|Bäckermeisters?|Metzgermeisters?|Schuhmachers?|Zimmermanns?|Maurers?|Webers|Knechts?|Magd|Dr|Prof)$/.test(w[0])) w.shift();
   while (w.length && /^(von|van|de|zu|der|den|geb\.|geborene)$/.test(w[w.length - 1])) w.pop();
@@ -1079,7 +1105,7 @@ function takeList(str) {
 function extractRelatives(text, p) {
   const items = [], spans = [];
   // Abkürzungen ausschreiben, damit ihr Punkt nicht als Satzende zählt
-  const t = ' ' + String(text || '').replace(/\s+/g, ' ').replace(/\bgeb\.\s*/g, 'geborene ').replace(/\bverh\.\s*/g, 'verheiratet ').replace(/\b(Dr|St|Hl)\.\s*/g, '$1 ') + ' ';
+  const t = ' ' + String(text || '').replace(/[ \t\u00a0]+/g, ' ').replace(/\bgeb\.\s*/g, 'geborene ').replace(/\bverh\.\s*/g, 'verheiratet ').replace(/\b(Dr|St|Hl)\.\s*/g, '$1 ') + ' ';
   const fam = p.birthName || p.lastName || '';
   const add = (key, name, sure) => {
     if (!name) return;
@@ -1095,8 +1121,8 @@ function extractRelatives(text, p) {
   };
   let m;
   // Eltern: „Sohn/Tochter des Johann Weber und der Maria geb. Schmidt“
-  const reP = /\b(?:Sohn|Tochter|Kind)\s+(?:des|von|der)\s+(.+?)\s+und\s+(?:der\s+|seiner\s+|ihrer\s+)?(.+?)(?=[,.;()]|\s+(?:geboren|wurde|war|ist|lebte)\b|$)/g;
-  while ((m = reP.exec(t))) { spans.push(m[0]); add('VATER', takeName(m[1])); add('MUTTER', takeName(m[2])); }
+  const reP = /\b(?:Sohn|Tochter|Kind|Kinder|Kindern|Sohnes|Tochter)\s+(?:des|von|der)\s+(.+?)\s+und\s+(?:der\s+|seiner\s+|ihrer\s+)?(.+?)(?=[,.;()]|\s+(?:geboren|wurde|war|ist|lebte)\b|$)/g;
+  while ((m = reP.exec(t))) { spans.push(m[0]); add('VATER', takeName(m[1])); add('MUTTER', takeName(m[2].replace(/^(?:dessen|seiner)\s+(?:Ehe)?(?:frau|Frau|Gattin)\s+/, ''))); }
   const reVM = /\b(Vater|Mutter)\s*:?\s+(?:war\s+|ist\s+)?(?!von\b|des\b|der\b)(.+?)(?=[,.;]|$)/g;
   while ((m = reVM.exec(t))) spans.push(m[0]) && add(m[1] === 'Vater' ? 'VATER' : 'MUTTER', takeName(m[2]));
   // Ehe
@@ -1104,10 +1130,19 @@ function extractRelatives(text, p) {
   while ((m = reE.exec(t))) { spans.push(m[0]); add('EHEPARTNER', takeName(m[1])); }
   const reE2 = /\b(?:Ehefrau|Ehemann|Gattin|Gatte|Ehegattin|Ehegatte|Witwe von|Witwer von)\s*:?\s+(?:war\s+|ist\s+)?(.+?)(?=[,.;]|$)/g;
   while ((m = reE2.exec(t))) { spans.push(m[0]); add('EHEPARTNER', takeName(m[1])); }
+  // „war mit Anna Schmidt (1880–1950) verheiratet“
+  const reE4 = /\bmit\s+((?:[A-ZÄÖÜ][\wäöüß'-]+\s*){1,4}(?:geborene\s+[A-ZÄÖÜ][\wäöüß-]+\s*)?(?:\([^)]*\)\s*)?)(?:verheiratet|vermählt|verlobt|liiert)/g;
+  while ((m = reE4.exec(t))) { spans.push(m[0]); add('EHEPARTNER', takeName(m[1])); }
+  // „dessen Frau Elisabeth“, „deren Mann Hans“
+  const reE5 = /\b(?:dessen|deren)\s+(?:Ehe)?(?:Frau|Mann|Gattin|Gatte)\s+(.+?)(?=[,.;)]|\s+(?:und|geboren)\b|$)/g;
+  while ((m = reE5.exec(t))) { spans.push(m[0]); add(/Vater|Sohn|des\s/.test(t.slice(Math.max(0, m.index - 80), m.index)) ? 'MUTTER' : 'EHEPARTNER', takeName(m[1])); }
+  // „war der Vater/die Mutter von X“ → Kind
+  const reVo = /\b(?:war|ist|wurde)\s+(?:der|die)\s+(?:Vater|Mutter)\s+(?:von|des|der)\s+(.+?)(?=[,.;]|$)/g;
+  while ((m = reVo.exec(t))) { spans.push(m[0]); add('KIND', takeName(m[1])); }
   const reE3 = /\b(?:seine[rm]?|ihre[rm]?|mit\s+seiner|mit\s+ihrem)\s+(?:zweiten\s+|ersten\s+)?(?:Frau|Ehefrau|Mann|Ehemann|Gattin|Gatte)\s+(.+?)(?=[,.;]|\s+(?:hatte|bekam|lebte|zog|starb|war)\b|$)/gi;
   while ((m = reE3.exec(t))) { spans.push(m[0]); add('EHEPARTNER', takeName(m[1])); }
   // Kinder und Geschwister als Liste
-  const reK = /\b(Kinder|Söhne|Töchter|Geschwister|Brüder|Schwestern)\s*:?\s+(.+?)(?=[.;]|$)/g;
+  const reK = /\b(Kinder|Söhne|Töchter|Geschwister|Brüder|Schwestern)(?:\s*:|,\s*darunter|,\s*nämlich|\s+namens)?\s+(?!des\b|von\b|der\b)(.+?)(?=[.;]|$)/g;
   while ((m = reK.exec(t))) spans.push(m[0]) && takeList(m[2]).forEach(n => add(/Geschwister|Brüder|Schwestern/.test(m[1]) ? 'GESCHWISTER' : 'KIND', n));
   const reS = /\b(Sohn|Tochter|Bruder|Schwester)\s*:?\s+(?!des\b|von\b|der\b)(.+?)(?=[,.;]|\s+und\b|$)/g;
   while ((m = reS.exec(t))) spans.push(m[0]) && add(/Sohn|Tochter/.test(m[1]) ? 'KIND' : 'GESCHWISTER', takeName(m[2]));
@@ -1171,7 +1206,20 @@ function addFinding(id, pre = {}) {
   const parse = () => {
     const out = dlg.querySelector('#fOut'), text = T().replace(/https?:\/\/\S+/g, ' ');
     if (!text && !wiki) { out.innerHTML = ''; return; }
-    const relItems = extractRelatives(wiki ? (wiki.text || '') : text, p);
+    // Für Verwandte einen großen Bereich auswerten: bei einer gelesenen Seite ab der gewählten Stelle bis ca. 2500 Zeichen weiter
+    let relText = wiki ? (wiki.text || '') : text;
+    if (!wiki && pageText && T() === lastSnippet.trim()) relText = pageText.slice(Math.max(0, snipPos - 300), snipPos + 2500);
+    const trg = relText.search(/In\s+(?:Liebe|stiller\s+Trauer|tiefer\s+Trauer|Dankbarkeit)|Es\s+trauern/i);
+    if (trg >= 0) { const stop = relText.slice(trg).search(/Trauerfeier|Beerdigung|Beisetzung|Urnenbeisetzung|Weitere Anzeige|Traueradresse|Kondolenz/i); if (stop > 0) relText = relText.slice(0, trg + stop); }
+    const relItems = extractRelatives(relText, p);
+    // Sicherheitsnetz: alle weiteren Namen im Text (Verwandtschaft unbekannt, nicht vorab angehakt)
+    namesInText(relText, p).forEach(({ name, guessed, first }) => {
+      const r = parseSpoken(name);
+      if (sameName(p, r) || relItems.some(y => sameName(parseSpoken(y.value), r))) return;
+      // nur Vorname im Text („mit Klaus“) und schon als Verwandter erkannt → nicht doppelt
+      if (guessed && relItems.some(y => y.value.split(/\s+/)[0] === first)) return;
+      relItems.push({ key: 'ANDERE', value: name, sure: 'unsicher', relLabel: 'Name im Text – Verwandtschaft unbekannt' });
+    });
     const r = wiki ? {} : parseSpoken(relItems.rest || text), items = wiki ? wiki.items.map(x => Object.assign({}, x)) : [];
     if (wiki) { const n = parseSpoken(wiki.name); r.firstName = n.firstName; r.lastName = n.lastName; }
     const ev = (d, pl) => [d, pl ? 'in ' + pl : ''].filter(Boolean).join(' ');
@@ -1192,7 +1240,7 @@ function addFinding(id, pre = {}) {
       ? `<div class="research locked">⚠️ Im Text steht <b>${esc(frag)}</b> – ist das wirklich ${esc(fullName(p))}?</div>` : '';
     if (other) sugs.forEach(x => x.checked = false);   // anderer Name: nichts vorab anhaken
     out.innerHTML = other + (sugs.length ? renderSugs(sugs)
-      : '<div class="research open">Ich habe keine neuen Daten erkannt. Der Text wird trotzdem als Notiz gespeichert.' + (prot ? '' : ' Bei längeren Texten hilft „Von Claude prüfen lassen“.') + '</div>');
+      : `<div class="research open">Ich habe keine neuen Daten erkannt (ausgewertet: ${(wiki ? (wiki.text || '').length : (pageText || text).length)} Zeichen). Der Text wird trotzdem als Notiz gespeichert.` + (prot ? '' : ' Bei längeren Texten hilft „Von Claude prüfen lassen“.') + '</div>');
   };
   dlg.querySelector('#fParse').onclick = () => {
     wiki = null;
@@ -1216,13 +1264,15 @@ function addFinding(id, pre = {}) {
   };
   const rBtn = dlg.querySelector('#fRead'), snipBox = dlg.querySelector('#fSnips');
   const isUrl = u => /^https?:\/\//i.test(u);
-  const useSnippet = t => { dlg.querySelector('#fText').value = t.replace(/^… | …$/g, ''); wiki = null; parse(); };
+  let pageText = '', snipPos = 0, lastSnippet = '';   // ganzer Seitentext (für Verwandte/Traueranzeigen weiter unten)
+  const useSnippet = x => { lastSnippet = x.text.replace(/^… | …$/g, ''); snipPos = x.start; dlg.querySelector('#fText').value = lastSnippet; wiki = null; parse(); };
   const readUrl = async () => {
     snipBox.innerHTML = '<div class="research open">⏳ Lese die Seite … (kann bei PDFs bis zu 30 Sekunden dauern)</div>';
     rBtn.disabled = true; snipBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
     try {
       const text = await readPage(SRC());
       const sn = findSnippets(p, text);
+      pageText = text;
       if (!sn.length) {
         snipBox.innerHTML = `<div class="research locked">Der Name ${esc(p.lastName || p.birthName || '')} kommt auf der Seite nicht vor (oder die Seite ist ein Bild/Scan).` + (prot ? '' : ' Tipp: „🤖 Lieber von Claude prüfen lassen“.') + '</div>';
         return;
@@ -1230,9 +1280,9 @@ function addFinding(id, pre = {}) {
       snipBox.innerHTML = `<h3>Stellen mit „${esc(p.lastName || p.birthName)}“ (${sn.length})</h3><p class="hint">Die beste Stelle ist schon übernommen. Passt eine andere besser? Einfach antippen.</p>`
         + sn.map((x, i) => `<div class="snip" data-s="${i}">${esc(x.text)}</div>`).join('');
       snipBox.querySelectorAll('[data-s]').forEach(d => d.onclick = () => {
-        snipBox.querySelectorAll('.snip').forEach(x => x.classList.toggle('on', x === d)); useSnippet(sn[+d.dataset.s].text);
+        snipBox.querySelectorAll('.snip').forEach(x => x.classList.toggle('on', x === d)); useSnippet(sn[+d.dataset.s]);
       });
-      snipBox.querySelector('.snip').classList.add('on'); useSnippet(sn[0].text);
+      snipBox.querySelector('.snip').classList.add('on'); useSnippet(sn[0]);
       const o = dlg.querySelector('#fOut'); (o.querySelector('label.sug') ? o : snipBox).scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
       console.warn('read', e);
@@ -1384,7 +1434,8 @@ function capWords(s) {
 function capFirst(s) { s = s.trim(); return s ? s[0].toUpperCase() + s.slice(1) : s; }
 function clean(s) { return String(s || '').replace(/^[\s,.;:–-]+|[\s,.;:–-]+$/g, '').replace(/\s+und$/i, '').trim(); }
 function parseEvent(seg) {
-  seg = clean(seg); const out = {};
+  // nur bis zum Satzende auswerten (aber „3. Februar“ und „St. Jakob“ sind kein Satzende)
+  seg = clean(String(seg || '').split(/(?<!\b(?:St|Dr|Hl|Nr|Prof|geb|gest|verh))\.\s+(?=[A-ZÄÖÜ])(?!(?:Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember|Jan|Feb|Mär|Apr|Jun|Jul|Aug|Sep|Sept|Okt|Nov|Dez)\b)/)[0]); const out = {};
   const pm = seg.match(/(?:^|\s)(?:in|zu|im ort)\s+(.+)$/i);
   if (pm && !/^\d/.test(pm[1]) && !/^(jahr|jahre|januar|februar|märz|april|mai|juni|juli|august|september|oktober|november|dezember)\b/i.test(pm[1])) {
     let pl = pm[1].split(/[.;:!?()\n]|\s[-–]\s|,\s/)[0];
@@ -1877,7 +1928,8 @@ document.getElementById('btnMenu').onclick = () => {
       <button class="btn" data-m="demo">👪 Beispiel-Familie laden</button>
       <button class="btn danger" data-m="wipe">🗑️ Alles löschen</button>
       <button class="btn" data-m="close">Schließen</button>
-    </div>`);
+    </div>
+    <p class="hint" style="text-align:center;margin-top:14px">Version ${APP_VERSION}</p>`);
   dlg.addEventListener('click', e => {
     const m = e.target.closest('[data-m]'); if (!m) return;
     const a = m.dataset.m;

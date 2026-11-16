@@ -668,7 +668,7 @@ function parseClaudeBlock(text) {
   return items;
 }
 const ROLE = { VATER: 'father', MUTTER: 'mother', EHEPARTNER: 'spouse', EHEPARTNERIN: 'spouse', PARTNER: 'spouse', KIND: 'child', GESCHWISTER: 'sibling', BRUDER: 'sibling', SCHWESTER: 'sibling' };
-const FIELD_LABEL = { birthDate: 'Geburtsdatum', birthPlace: 'Geburtsort', deathDate: 'Sterbedatum', deathPlace: 'Sterbeort', occupation: 'Beruf', birthName: 'Geburtsname' };
+const FIELD_LABEL = { gender: 'Geschlecht', birthDate: 'Geburtsdatum', birthPlace: 'Geburtsort', deathDate: 'Sterbedatum', deathPlace: 'Sterbeort', occupation: 'Beruf', birthName: 'Geburtsname' };
 function sameName(a, b) {
   const k = s => koelner(String(s || '').split(/\s+/)[0]);
   const lastA = [a.lastName, a.birthName].filter(Boolean).map(koelner), lastB = [b.lastName, b.birthName].filter(Boolean).map(koelner);
@@ -726,7 +726,7 @@ const ROLE_LABEL = { father: 'Vater', mother: 'Mutter', spouse: 'Partner/in', ch
 function renderSugs(sugs) {
   return '<h3>Vorschläge – abhaken, was stimmt:</h3>' + sugs.map((s, i) => {
     let txt;
-    if (s.type === 'field') txt = `${s.who ? '<b>' + esc(s.who) + '</b> – ' : ''}${FIELD_LABEL[s.field]}: <b>${esc(s.value)}</b>${s.old ? ` <span class="warn">(bisher: ${esc(s.old)})</span>` : ''}`;
+    if (s.type === 'field') txt = `${s.who ? '<b>' + esc(s.who) + '</b> – ' : ''}${FIELD_LABEL[s.field]}: <b>${esc(s.field === 'gender' ? ({ m: 'Mann', w: 'Frau' }[s.value] || s.value) : s.value)}</b>${s.old ? ` <span class="warn">(bisher: ${esc(s.old)})</span>` : ''}`;
     else {
       const d = s.data;
       txt = `Neue Person (${ROLE_LABEL[s.role]}): <b>${esc([d.firstName, d.lastName].filter(Boolean).join(' '))}</b>${d.birthName ? ' geb. ' + esc(d.birthName) : ''} ${esc(lifeSpan(d))}${d.birthPlace ? ', ' + esc(d.birthPlace) : ''}`
@@ -746,7 +746,7 @@ function applySuggestions(p, chosen) {
     if (s.type === 'field') {
       const q = P(s.target); q[s.field] = s.value;
       if (/^death/.test(s.field)) q.status = 'verstorben';
-      srcLine(q, FIELD_LABEL[s.field], s);
+      if (s.field !== 'gender') srcLine(q, FIELD_LABEL[s.field], s);
     } else {
       const d = s.data, by = yearOf(d.birthDate);
       const np = newPerson({ firstName: d.firstName || '', lastName: d.lastName || '', birthName: d.birthName || '',
@@ -797,6 +797,73 @@ function importClaude(id) {
   };
 }
 
+// ---- Wikipedia/Wikidata: zu einem Wikipedia-Link die fertigen Daten (Geburt, Tod, Eltern …) abrufen ----
+// Wikipedia erlaubt diese Abfragen direkt aus dem Browser (origin=*). Andere Webseiten erlauben das nicht.
+function wikiFromUrl(url) {
+  const m = String(url || '').match(/^https?:\/\/([a-z-]+)(?:\.m)?\.wikipedia\.org\/wiki\/([^?#]+)/i);
+  return m ? { lang: m[1].toLowerCase(), title: decodeURIComponent(m[2]).replace(/_/g, ' ') } : null;
+}
+async function wdGet(params) {
+  const q = new URLSearchParams(Object.assign({ format: 'json', origin: '*' }, params));
+  const r = await fetch('https://www.wikidata.org/w/api.php?' + q); if (!r.ok) throw new Error('wikidata'); return r.json();
+}
+async function wdEntities(ids, props, lang) {
+  const out = {};
+  for (let i = 0; i < ids.length; i += 45) {
+    const j = await wdGet({ action: 'wbgetentities', ids: ids.slice(i, i + 45).join('|'), props, languages: lang + '|de|en' });
+    Object.assign(out, j.entities || {});
+  }
+  return out;
+}
+function wdDate(claims, pid) {
+  const v = claims && claims[pid] && claims[pid][0] && claims[pid][0].mainsnak.datavalue;
+  if (!v || !v.value || !v.value.time) return '';
+  const m = v.value.time.match(/^\+?(\d{4})-(\d{2})-(\d{2})/); if (!m) return '';
+  const pr = v.value.precision;
+  return pr >= 11 ? `${m[3]}.${m[2]}.${m[1]}` : pr === 10 ? `${m[2]}.${m[1]}` : pr === 9 ? m[1] : '';
+}
+function wdIds(claims, pid) {
+  return ((claims && claims[pid]) || []).map(c => c.mainsnak.datavalue && c.mainsnak.datavalue.value && c.mainsnak.datavalue.value.id).filter(Boolean);
+}
+function wdLabel(ent, lang) {
+  if (!ent || !ent.labels) return '';
+  return (ent.labels[lang] || ent.labels.de || ent.labels.en || {}).value || '';
+}
+// Liefert Zeilen im gleichen Format wie STAMMBAUM-DATEN (key/value), dazu den Namen aus Wikipedia
+async function wikiItems(url) {
+  const w = wikiFromUrl(url); if (!w) return null;
+  const q = new URLSearchParams({ action: 'query', prop: 'pageprops', titles: w.title, redirects: '1', format: 'json', origin: '*' });
+  const r = await fetch(`https://${w.lang}.wikipedia.org/w/api.php?` + q); if (!r.ok) throw new Error('wikipedia');
+  const pages = ((await r.json()).query || {}).pages || {};
+  const page = Object.values(pages)[0] || {};
+  const qid = page.pageprops && page.pageprops.wikibase_item; if (!qid) return { items: [], name: page.title || w.title };
+  const main = (await wdEntities([qid], 'claims|labels', w.lang))[qid]; const c = main.claims || {};
+  const rel = { VATER: wdIds(c, 'P22'), MUTTER: wdIds(c, 'P25'), EHEPARTNER: wdIds(c, 'P26'), KIND: wdIds(c, 'P40') };
+  const relIds = [].concat(...Object.values(rel)).slice(0, 40);
+  const relEnt = relIds.length ? await wdEntities(relIds, 'claims|labels', w.lang) : {};
+  const placeIds = new Set(wdIds(c, 'P19').concat(wdIds(c, 'P20'), wdIds(c, 'P106').slice(0, 3)));
+  Object.values(relEnt).forEach(e => { wdIds(e.claims, 'P19').concat(wdIds(e.claims, 'P20')).forEach(x => placeIds.add(x)); });
+  const lab = placeIds.size ? await wdEntities([...placeIds], 'labels', w.lang) : {};
+  const L = id => wdLabel(lab[id], w.lang);
+  const ev = (d, placeId) => [d, placeId && L(placeId) ? 'in ' + L(placeId) : ''].filter(Boolean).join(' ');
+  const items = [];
+  const bd = wdDate(c, 'P569'), dd = wdDate(c, 'P570'), bp = wdIds(c, 'P19')[0], dp = wdIds(c, 'P20')[0];
+  if (bd || bp) items.push({ key: 'GEBURT', value: ev(bd, bp) });
+  if (dd || dp) items.push({ key: 'TOD', value: ev(dd, dp) });
+  const jobs = wdIds(c, 'P106').slice(0, 3).map(L).filter(Boolean);
+  if (jobs.length) items.push({ key: 'BERUF', value: jobs.join(', ') });
+  Object.entries(rel).forEach(([key, ids]) => ids.forEach(id => {
+    const e = relEnt[id]; if (!e) return; const ec = e.claims || {};
+    const name = wdLabel(e, w.lang); if (!name) return;
+    const parts = [name];
+    const b = ev(wdDate(ec, 'P569'), wdIds(ec, 'P19')[0]), d = ev(wdDate(ec, 'P570'), wdIds(ec, 'P20')[0]);
+    if (b) parts.push('geboren ' + b); if (d) parts.push('gestorben ' + d);
+    items.push({ key, value: parts.join(', ') });
+  }));
+  const g = wdIds(c, 'P21')[0];
+  return { items, name: wdLabel(main, w.lang) || page.title, gender: g === 'Q6581097' ? 'm' : g === 'Q6581072' ? 'w' : '' };
+}
+
 // ---- Fund übernehmen: Text von einer Webseite / aus Google (eingefügt oder über „Teilen“) ----
 function findingPrompt(p, text, url) {
   return `Ich erforsche meine Familiengeschichte (rein privat). Ich habe einen möglichen Fund zu dieser verstorbenen Person:
@@ -819,18 +886,21 @@ function addFinding(id, pre = {}) {
   const dlg = openModal(`
     <h2>📥 Fund übernehmen: ${esc(fullName(p))}</h2>
     <p class="hint">Text aus einem Google-Treffer oder von einer Webseite: markieren → <b>Kopieren</b> → hier einfügen.
-      Tipp: In Chrome geht es noch schneller über <b>Teilen → Stammbaum</b>.</p>
+      Tipp: In Chrome geht es noch schneller über <b>Teilen → Stammbaum</b>.
+      Bei einer <b>ganzen geteilten Seite</b> kommt nur der Link an – bei <b>Wikipedia</b> holt die App die Daten dann selbst, bei anderen Seiten bitte den Text markieren und teilen/kopieren.</p>
     <button class="btn" id="fPaste" style="width:100%">📋 Aus Zwischenablage einfügen</button>
     <label>Gefundener Text</label><textarea id="fText" placeholder="z. B. „Johann Weber, * 12.3.1850 in Rothenburg, † 1920 …“">${esc(preText)}</textarea>
     <label>Quelle (Link oder Beschreibung)</label><input id="fSrc" value="${esc(pre.url || firstUrl(preText))}" placeholder="z. B. Link zur Seite oder Kirchenbuch St. Jakob 1880, S. 45">
     <label>Wie sicher passt das zu ${esc(p.firstName || 'der Person')}?</label>
     <div class="seg" id="fSure"><button type="button" data-v="sicher">sicher</button><button type="button" data-v="wahrscheinlich" class="on">wahrscheinlich</button><button type="button" data-v="unsicher">unsicher</button></div>
+    <button class="btn primary" id="fWiki" style="width:100%;margin-top:12px" hidden>📖 Daten aus Wikipedia holen</button>
+    <div class="hint" id="fWikiMsg"></div>
     <button class="btn primary" id="fParse" style="width:100%;margin-top:12px">🔍 Daten im Text erkennen</button>
     ${prot ? '' : '<button class="btn" id="fClaude" style="width:100%;margin-top:8px">🤖 Lieber von Claude prüfen lassen</button>'}
     <div id="fOut"></div>
     <div class="actions"><button class="btn" id="cancel">Abbrechen</button><button class="btn primary" id="ok">💾 Speichern</button></div>
     <div class="toast" id="toast" hidden></div>`);
-  let sure = 'wahrscheinlich', sugs = [];
+  let sure = 'wahrscheinlich', sugs = [], wiki = null;
   const T = () => dlg.querySelector('#fText').value.trim(), SRC = () => dlg.querySelector('#fSrc').value.trim();
   const toast = msg => { const t = dlg.querySelector('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 4000); };
   dlg.querySelectorAll('#fSure button').forEach(b => b.onclick = () => {
@@ -839,8 +909,9 @@ function addFinding(id, pre = {}) {
   });
   const parse = () => {
     const out = dlg.querySelector('#fOut'), text = T().replace(/https?:\/\/\S+/g, ' ');
-    if (!text) { out.innerHTML = ''; return; }
-    const r = parseSpoken(text), items = [];
+    if (!text && !wiki) { out.innerHTML = ''; return; }
+    const r = wiki ? {} : parseSpoken(text), items = wiki ? wiki.items.map(x => Object.assign({}, x)) : [];
+    if (wiki) { const n = parseSpoken(wiki.name); r.firstName = n.firstName; r.lastName = n.lastName; }
     const ev = (d, pl) => [d, pl ? 'in ' + pl : ''].filter(Boolean).join(' ');
     if (r.birthDate || r.birthPlace) items.push({ key: 'GEBURT', value: ev(r.birthDate, r.birthPlace) });
     if (r.deathDate || r.deathPlace) items.push({ key: 'TOD', value: ev(r.deathDate, r.deathPlace) });
@@ -848,6 +919,7 @@ function addFinding(id, pre = {}) {
     if (r.birthName) items.push({ key: 'GEBURTSNAME', value: r.birthName });
     items.forEach(it => { it.sure = sure; it.source = SRC(); });
     sugs = buildSuggestions(p, items);
+    if (wiki && wiki.gender && p.gender === 'u') sugs.unshift({ type: 'field', target: p.id, field: 'gender', value: wiki.gender, old: '', checked: true, sure, source: SRC() });
     const words = [r.firstName, r.lastName].filter(Boolean).join(' ').split(/\s+/).length;
     const other = r.firstName && words <= 4 && !sameName(p, r)
       ? `<div class="research locked">⚠️ Im Text steht <b>${esc([r.firstName, r.lastName].filter(Boolean).join(' '))}</b> – ist das wirklich ${esc(fullName(p))}?</div>` : '';
@@ -855,7 +927,21 @@ function addFinding(id, pre = {}) {
     out.innerHTML = other + (sugs.length ? renderSugs(sugs)
       : '<div class="research open">Ich habe keine neuen Daten erkannt. Der Text wird trotzdem als Notiz gespeichert.' + (prot ? '' : ' Bei längeren Texten hilft „Von Claude prüfen lassen“.') + '</div>');
   };
-  dlg.querySelector('#fParse').onclick = parse;
+  dlg.querySelector('#fParse').onclick = () => { wiki = null; parse(); };
+  // Wikipedia-Link erkannt → Daten direkt abrufen
+  const wBtn = dlg.querySelector('#fWiki'), wMsg = dlg.querySelector('#fWikiMsg');
+  const loadWiki = async () => {
+    wMsg.textContent = '⏳ Hole Daten aus Wikipedia …';
+    try {
+      const res = await wikiItems(SRC());
+      if (!res || !res.items.length) { wMsg.textContent = 'In Wikipedia/Wikidata stehen zu diesem Artikel keine Lebensdaten.'; return; }
+      wiki = res; wMsg.textContent = `✓ Daten zu „${res.name}“ gefunden (${res.items.length}).`; parse();
+    } catch (e) { console.warn('wiki', e); wMsg.textContent = 'Wikipedia ist gerade nicht erreichbar. Alternativ: Text im Artikel markieren und kopieren.'; }
+  };
+  const checkWiki = () => { wBtn.hidden = !wikiFromUrl(SRC()); };
+  dlg.querySelector('#fSrc').addEventListener('input', checkWiki);
+  wBtn.onclick = loadWiki;
+  checkWiki();
   dlg.querySelector('#fPaste').onclick = async () => {
     try { const t = await navigator.clipboard.readText(); if (t) { dlg.querySelector('#fText').value = t.trim(); if (!SRC()) dlg.querySelector('#fSrc').value = firstUrl(t); parse(); return; } } catch (e) {}
     dlg.querySelector('#fText').focus();
@@ -878,7 +964,7 @@ function addFinding(id, pre = {}) {
     if (s && !chosen.some(c => c.source)) p.sources = (p.sources ? p.sources + '\n' : '') + s;
     save(); closeModal(); refresh(); openDetail(id);
   };
-  if (preText) parse();
+  if (wikiFromUrl(SRC())) loadWiki(); else if (preText) parse();
 }
 
 // ---- „Teilen → Stammbaum“ aus Chrome: Person auswählen, dann Fund übernehmen ----

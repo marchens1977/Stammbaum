@@ -742,7 +742,7 @@ function buildSuggestions(p, items) {
         ['birthName', 'birthDate', 'birthPlace', 'deathDate', 'deathPlace', 'occupation'].forEach(f => { if (r[f] && (!existing[f] || moreExact(f, existing[f], r[f]))) fieldSug(existing, f, r[f], base, fullName(existing)); });
       } else {
         const replaces = (role === 'father' && P(p.father)) || (role === 'mother' && P(p.mother));
-        const noParents = role === 'sibling' && !P(p.father) && !P(p.mother);
+        const noParents = role === 'sibling' && !P(p.father) && !P(p.mother) && !items.some(x => x.key === 'VATER' || x.key === 'MUTTER');
         out.push(Object.assign({ type: 'new', role, data: r, replaces: replaces ? fullName(replaces) : '', disabled: noParents,
           checked: !replaces && !noParents && base.sure !== 'unsicher' }, base));
       }
@@ -876,7 +876,7 @@ async function wikiItems(url) {
   const page = Object.values(pages)[0] || {};
   const qid = page.pageprops && page.pageprops.wikibase_item; if (!qid) return { items: [], name: page.title || w.title };
   const main = (await wdEntities([qid], 'claims|labels', w.lang))[qid]; const c = main.claims || {};
-  const rel = { VATER: wdIds(c, 'P22'), MUTTER: wdIds(c, 'P25'), EHEPARTNER: wdIds(c, 'P26'), KIND: wdIds(c, 'P40') };
+  const rel = { VATER: wdIds(c, 'P22'), MUTTER: wdIds(c, 'P25'), EHEPARTNER: wdIds(c, 'P26'), KIND: wdIds(c, 'P40'), GESCHWISTER: wdIds(c, 'P3373') };
   const relIds = [].concat(...Object.values(rel)).slice(0, 40);
   const relEnt = relIds.length ? await wdEntities(relIds, 'claims|labels', w.lang) : {};
   const placeIds = new Set(wdIds(c, 'P19').concat(wdIds(c, 'P20'), wdIds(c, 'P106').slice(0, 3)));
@@ -962,6 +962,68 @@ function findSnippets(p, text) {
   return snips.sort((a, b) => b.score - a.score).slice(0, 6);
 }
 
+// ---- Verwandte in freiem Text erkennen („Sohn des …“, „verheiratet mit …“, „Kinder: …“, Traueranzeigen) ----
+const NAME_WORD = "[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'-]+";
+const NAME_RE = new RegExp(`^(?:${NAME_WORD}|von|van|de|zu|der|den|geb\\.|geborene)(?:\\s+(?:${NAME_WORD}|von|van|de|zu|der|den|geb\\.|geborene))*`);
+const NOT_NAMES = /^(Familie|Familien|Enkel|Enkelkinder|Urenkel|Angehörige|Alle|Anverwandte|Freunde|Kinder|Geschwister|Eltern|Die|Der|Das|Wir|Ihre|Seine|Unsere|In|Im|Am|Und|Mit|Zum|Zur|Beerdigung|Trauerfeier)$/;
+function takeName(str) {
+  const m = String(str || '').trim().match(NAME_RE); if (!m) return '';
+  let w = m[0].split(/\s+/);
+  while (w.length && /^(von|van|de|zu|der|den|geb\.|geborene)$/.test(w[w.length - 1])) w.pop();
+  w = w.slice(0, 6);
+  if (!w.length || NOT_NAMES.test(w[0])) return '';
+  let name = w.join(' ');
+  // Lebensdaten direkt dahinter: „(1850–1920)“ oder „* 1850“
+  const rest = String(str).trim().slice(m[0].length);
+  const d = rest.match(/^\s*\(?\s*\*?\s*(\d{4})\s*(?:[-–]|bis)\s*†?\s*(\d{4})\s*\)?/);
+  if (d) name += ` ${d[1]} bis ${d[2]}`;
+  return name;
+}
+function takeList(str) {
+  return String(str || '').split(/[.;\n]/)[0].split(/,\s*|\s+und\s+|\s+sowie\s+/).map(takeName).filter(Boolean);
+}
+function extractRelatives(text, p) {
+  const items = [], spans = [];
+  // Abkürzungen ausschreiben, damit ihr Punkt nicht als Satzende zählt
+  const t = ' ' + String(text || '').replace(/\s+/g, ' ').replace(/\bgeb\.\s*/g, 'geborene ').replace(/\bverh\.\s*/g, 'verheiratet ').replace(/\b(Dr|St|Hl)\.\s*/g, '$1 ') + ' ';
+  const fam = p.birthName || p.lastName || '';
+  const add = (key, name, sure) => {
+    if (!name) return;
+    let v = name.replace(/\bgeb\.\s*/g, 'geborene ');
+    const words = v.replace(/\s+\d{4}.*$/, '').replace(/\s+geborene.*$/, '').split(/\s+/);
+    if (words.length === 1) {   // nur Vorname → Familienname ergänzen
+      const ln = key === 'EHEPARTNER' || key === 'KIND' ? (p.lastName || fam) : fam;
+      if (ln) v = v.replace(words[0], words[0] + ' ' + ln);
+    }
+    const r = parseSpoken(v);
+    if (sameName(p, r) && (!r.birthDate || r.birthDate === p.birthDate)) return;   // das ist die Person selbst
+    if (!items.some(x => x.key === key && x.value === v)) items.push({ key, value: v, sure });
+  };
+  let m;
+  // Eltern: „Sohn/Tochter des Johann Weber und der Maria geb. Schmidt“
+  const reP = /\b(?:Sohn|Tochter|Kind)\s+(?:des|von|der)\s+(.+?)\s+und\s+(?:der\s+|seiner\s+|ihrer\s+)?(.+?)(?=[,.;()]|\s+(?:geboren|wurde|war|ist|lebte)\b|$)/g;
+  while ((m = reP.exec(t))) { spans.push(m[0]); add('VATER', takeName(m[1])); add('MUTTER', takeName(m[2])); }
+  const reVM = /\b(Vater|Mutter)\s*:?\s+(?:war\s+|ist\s+)?(?!von\b|des\b|der\b)(.+?)(?=[,.;]|$)/g;
+  while ((m = reVM.exec(t))) spans.push(m[0]) && add(m[1] === 'Vater' ? 'VATER' : 'MUTTER', takeName(m[2]));
+  // Ehe
+  const reE = /\b(?:verheiratet|vermählt|heirat|heiratete|ehe)\s+(?:mit\s+)?(?:der\s+|dem\s+)?(.+?)(?=[,.;]|$)/gi;
+  while ((m = reE.exec(t))) { spans.push(m[0]); add('EHEPARTNER', takeName(m[1])); }
+  const reE2 = /\b(?:Ehefrau|Ehemann|Gattin|Gatte|Ehegattin|Ehegatte|Witwe von|Witwer von)\s*:?\s+(?:war\s+|ist\s+)?(.+?)(?=[,.;]|$)/g;
+  while ((m = reE2.exec(t))) { spans.push(m[0]); add('EHEPARTNER', takeName(m[1])); }
+  // Kinder und Geschwister als Liste
+  const reK = /\b(Kinder|Söhne|Töchter|Geschwister|Brüder|Schwestern)\s*:?\s+(.+?)(?=[.;]|$)/g;
+  while ((m = reK.exec(t))) spans.push(m[0]) && takeList(m[2]).forEach(n => add(/Geschwister|Brüder|Schwestern/.test(m[1]) ? 'GESCHWISTER' : 'KIND', n));
+  const reS = /\b(Sohn|Tochter|Bruder|Schwester)\s*:?\s+(?!des\b|von\b|der\b)(.+?)(?=[,.;]|\s+und\b|$)/g;
+  while ((m = reS.exec(t))) spans.push(m[0]) && add(/Sohn|Tochter/.test(m[1]) ? 'KIND' : 'GESCHWISTER', takeName(m[2]));
+  // Traueranzeige: „In Liebe: Peter und Monika mit Familien“ → Angehörige, unsicher (oft Kinder)
+  const reT = /\b(?:In Liebe|In stiller Trauer|In tiefer Trauer|In Dankbarkeit|In Liebe und Dankbarkeit)\s*:?\s+(.+?)(?=[.;]|$)/g;
+  while ((m = reT.exec(t))) spans.push(m[0]) && takeList(m[1].replace(/\s+mit\s+Famili\w*/g, '')).forEach(n => add('KIND', n, 'unsicher'));
+  // Text ohne die Verwandten-Stellen (damit z. B. „geborene Hofmann“ der Mutter nicht der Person zugeordnet wird)
+  let rest = t; spans.forEach(x => { rest = rest.replace(x, '. '); });
+  items.rest = rest;
+  return items;
+}
+
 // ---- Fund übernehmen: Text von einer Webseite / aus Google (eingefügt oder über „Teilen“) ----
 function findingPrompt(p, text, url) {
   return `Ich erforsche meine Familiengeschichte (rein privat). Ich habe einen möglichen Fund zu dieser verstorbenen Person:
@@ -1010,19 +1072,25 @@ function addFinding(id, pre = {}) {
   const parse = () => {
     const out = dlg.querySelector('#fOut'), text = T().replace(/https?:\/\/\S+/g, ' ');
     if (!text && !wiki) { out.innerHTML = ''; return; }
-    const r = wiki ? {} : parseSpoken(text), items = wiki ? wiki.items.map(x => Object.assign({}, x)) : [];
+    const relItems = wiki ? [] : extractRelatives(text, p);
+    const r = wiki ? {} : parseSpoken(relItems.rest || text), items = wiki ? wiki.items.map(x => Object.assign({}, x)) : [];
     if (wiki) { const n = parseSpoken(wiki.name); r.firstName = n.firstName; r.lastName = n.lastName; }
     const ev = (d, pl) => [d, pl ? 'in ' + pl : ''].filter(Boolean).join(' ');
     if (r.birthDate || r.birthPlace) items.push({ key: 'GEBURT', value: ev(r.birthDate, r.birthPlace) });
     if (r.deathDate || r.deathPlace) items.push({ key: 'TOD', value: ev(r.deathDate, r.deathPlace) });
     if (r.occupation) items.push({ key: 'BERUF', value: r.occupation });
     if (r.birthName) items.push({ key: 'GEBURTSNAME', value: r.birthName });
-    items.forEach(it => { it.sure = sure; it.source = SRC(); });
+    relItems.forEach(x => items.push(x));
+    items.forEach(it => { it.sure = it.sure || sure; it.source = SRC(); });
     sugs = buildSuggestions(p, items);
     if (wiki && wiki.gender && p.gender === 'u') sugs.unshift({ type: 'field', target: p.id, field: 'gender', value: wiki.gender, old: '', checked: true, sure, source: SRC() });
-    const words = [r.firstName, r.lastName].filter(Boolean).join(' ').split(/\s+/).length;
-    const other = r.firstName && words <= 4 && !sameName(p, r)
-      ? `<div class="research locked">⚠️ Im Text steht <b>${esc([r.firstName, r.lastName].filter(Boolean).join(' '))}</b> – ist das wirklich ${esc(fullName(p))}?</div>` : '';
+    // Namensprüfung nur mit dem Anfang des Textes (bis zum ersten Komma/Punkt) und nur, wenn das wirklich ein Name ist
+    const frag = (wiki ? wiki.name : text).trim().split(/[,.;:\n(*†]|\s(?:geboren|gestorben|geborene)\b/)[0].trim();
+    const fw = frag.split(/\s+/).filter(Boolean);
+    const plausible = fw.length >= 2 && fw.length <= 4 && fw.every(w => /^[A-ZÄÖÜ]/.test(w) || PARTICLES.includes(w));
+    const fr = plausible ? parseSpoken(frag) : {};
+    const other = plausible && fr.firstName && !sameName(p, fr)
+      ? `<div class="research locked">⚠️ Im Text steht <b>${esc(frag)}</b> – ist das wirklich ${esc(fullName(p))}?</div>` : '';
     if (other) sugs.forEach(x => x.checked = false);   // anderer Name: nichts vorab anhaken
     out.innerHTML = other + (sugs.length ? renderSugs(sugs)
       : '<div class="research open">Ich habe keine neuen Daten erkannt. Der Text wird trotzdem als Notiz gespeichert.' + (prot ? '' : ' Bei längeren Texten hilft „Von Claude prüfen lassen“.') + '</div>');

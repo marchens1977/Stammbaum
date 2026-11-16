@@ -19,7 +19,7 @@ keine App für Dritte, keine Stammbäume über fremde Personen.
 - **Datenschutz:** Keine Familiendaten, Sicherungen oder GEDCOM-Dateien ins Repository hochladen.
 - **Schutz Lebender:** Eine Person gilt als geschützt, wenn sie „lebt“, jünger als 100 Jahre ist oder
   das unklar ist. Für geschützte Personen gibt es **keine** Online-Recherche (auch nicht in Stufe 2/3).
-- Gestrichelte Platzhalter („＋ Vater/Mutter/Partner/Kind“) nur direkt an der Person in der Mitte, **nicht für Geschwister** (Wunsch des Nutzers: nicht zu voll).
+- **Keine gestrichelten Platzhalter im Baum** (Wunsch des Nutzers). Verwandte werden hinzugefügt, indem man die Person antippt und in der Detailansicht „＋ Vater/Mutter/Partner/Kind/Bruder/Schwester“ wählt.
 - KI-Funde sind später nur **Vorschläge mit Quelle**; erst nach Bestätigung durch den Nutzer übernehmen.
 - Keine automatische Suche auf Ancestry/MyHeritage (Nutzungsregeln verbieten das).
 
@@ -31,6 +31,7 @@ keine App für Dritte, keine Stammbäume über fremde Personen.
 | 2026-11-16 | Spracheingabe „🎤 Person einsprechen“: Chrome-Spracherkennung (de-DE) + Zerlegung des Satzes (`parseSpoken`) in Name, Geburtsname, Geburt, Tod, Orte, Beruf, „lebt noch“; Text auch tipp-/korrigierbar |
 | 2026-11-16 | Spracheingabe nutzt bekannte Schreibweisen: gleich klingende Namen/Orte/Berufe (Kölner Phonetik + einfache Varianten wie Carl/Karl) werden an den Stammbaum angepasst (z. B. Mayr → Maier); Korrekturen werden angezeigt |
 | 2026-11-16 | Geschwister der Hauptperson werden im Baum links daneben gezeigt (mit Eltern verbunden); Knopf „＋ Bruder / Schwester“ in der Detailansicht (kein gestrichelter Platzhalter – auf Wunsch entfernt) (übernimmt die Eltern automatisch; ohne Eltern Hinweis, erst Vater/Mutter einzutragen) |
+| 2026-11-16 | Alle gestrichelten Platzhalter aus dem Baum entfernt; Hinzufügen nur noch über die Detailansicht |
 
 ## 4. Nächste Schritte
 - **Stufe 2:** Recherche-Knopf ohne Kosten (öffnet FamilySearch, Matricula, CompGen, Volksbund usw.

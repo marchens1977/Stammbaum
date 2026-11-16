@@ -302,10 +302,6 @@ function renderTree(fit) {
     ps.forEach(p => d += `M${p.x},${midY}V${p.y + CH / 2}`);
     lines.push(d);
   }
-  // Platzhalter für fehlende Eltern
-  const ghostLine = (x) => lines.push(`M0,${-CH / 2}V${-CH / 2 - VG / 2}H${x}V${-rowH + CH / 2}`);
-  if (!P(f.father)) { ghosts.push({ x: slotX(1, 0), y: -rowH, add: 'father', label: '＋ Vater' }); ghostLine(slotX(1, 0)); }
-  if (!P(f.mother)) { ghosts.push({ x: slotX(1, 1), y: -rowH, add: 'mother', label: '＋ Mutter' }); ghostLine(slotX(1, 1)); }
 
   // --- Geschwister (links daneben, mit den Eltern verbunden) ---
   const sibs = siblingsOf(f);
@@ -322,7 +318,6 @@ function renderTree(fit) {
     lines.push(`M${j * step + CW / 2},0H${x - CW / 2}`);
     marks.push({ x: j * step + CW / 2 + HG / 2, y: -6 });
   });
-  if (!spouses.length) ghosts.push({ x: step, y: 0, add: 'spouse', label: '＋ Partner/in' });
 
   // --- Nachkommen (nach unten) ---
   const descW = (id, depth) => {
@@ -354,7 +349,6 @@ function renderTree(fit) {
     if (js.size === 1) { const j = [...js][0]; if (j >= 0) kx = gapX(j); }
   }
   placeKids(f.id, kx, 0, 0, focusStart);
-  if (!kids.length) { ghosts.push({ x: 0, y: rowH, add: 'child', label: '＋ Kind' }); lines.push(`M0,${CH / 2}V${rowH - CH / 2}`); }
 
   // --- Zeichnen ---
   let out = lines.map(d => `<path class="line" d="${d}"/>`).join('');

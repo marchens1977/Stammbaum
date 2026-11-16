@@ -132,6 +132,7 @@
   .partner-row { display: flex; align-items: center; justify-content: space-between; background: #f3ead4; border-radius: 10px; padding: 6px 10px; margin-bottom: 6px; }
   .partner-row button { background: none; border: none; color: #a33; font-size: 1.1rem; }
   [hidden] { display: none !important; }
+  select.rolesel { width: auto; padding: 4px 6px; font-size: .88rem; margin-top: 4px; border-radius: 8px; border: 1px solid #c8b895; background: #fff; }
   h3 .mini { font: .8rem system-ui, sans-serif; background: none; border: 1px solid #d0bf96; border-radius: 8px; padding: 2px 8px; color: var(--green); margin-left: 6px; vertical-align: middle; }
   .snip { background: #fff; border: 1px solid #d8c9a3; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; font-size: .88rem; cursor: pointer; }
   .snip.on { border: 2px solid var(--green); background: #eef5ea; }
@@ -697,11 +698,14 @@ function parseClaudeBlock(text) {
   return items;
 }
 const ROLE = { VATER: 'father', MUTTER: 'mother', EHEPARTNER: 'spouse', EHEPARTNERIN: 'spouse', PARTNER: 'spouse', KIND: 'child', GESCHWISTER: 'sibling', BRUDER: 'sibling', SCHWESTER: 'sibling' };
-const FIELD_LABEL = { gender: 'Geschlecht', birthDate: 'Geburtsdatum', birthPlace: 'Geburtsort', deathDate: 'Sterbedatum', deathPlace: 'Sterbeort', occupation: 'Beruf', birthName: 'Geburtsname' };
+const FIELD_LABEL = { lastName: 'Nachname', gender: 'Geschlecht', birthDate: 'Geburtsdatum', birthPlace: 'Geburtsort', deathDate: 'Sterbedatum', deathPlace: 'Sterbeort', occupation: 'Beruf', birthName: 'Geburtsname' };
 function sameName(a, b) {
-  const k = s => koelner(String(s || '').split(/\s+/)[0]);
+  const f = s => String(s || '').split(/\s+/)[0];
+  const fa = f(a.firstName), fb = f(b.firstName);
+  // Vornamen: gleich klingend UND (gleiche Schreibvariante oder höchstens 1 Buchstabe anders) – Peter ≠ Petra
+  const sameFirst = fa && fb && koelner(fa) === koelner(fb) && (simpleSpell(fa) === simpleSpell(fb) || lev(fa, fb) <= 1);
   const lastA = [a.lastName, a.birthName].filter(Boolean).map(koelner), lastB = [b.lastName, b.birthName].filter(Boolean).map(koelner);
-  return k(a.firstName) && k(a.firstName) === k(b.firstName) && (!lastA.length || !lastB.length || lastA.some(x => lastB.includes(x)));
+  return !!sameFirst && (!lastA.length || !lastB.length || lastA.some(x => lastB.includes(x)));
 }
 function relativesOf(p, role) {
   if (role === 'father') return [P(p.father)].filter(Boolean);
@@ -734,23 +738,31 @@ function buildSuggestions(p, items) {
       fieldSug(p, pre + 'Date', e.date, base); fieldSug(p, pre + 'Place', e.place, base);
     } else if (it.key === 'BERUF') fieldSug(p, 'occupation', capFirst(it.value), base);
     else if (it.key === 'GEBURTSNAME') fieldSug(p, 'birthName', capWords(it.value), base);
-    else if (ROLE[it.key]) {
-      const role = ROLE[it.key], r = parseSpoken(it.value);
+    else if (ROLE[it.key] || it.key === 'ANDERE') {
+      const role = ROLE[it.key] || 'other', r = parseSpoken(it.value);
       if (!r.firstName && !r.lastName) return;
-      const existing = relativesOf(p, role).find(q => sameName(q, r));
-      if (existing) {
+      if (out.some(o => o.type === 'new' && sameName(o.data, r))) return;   // schon vorgeschlagen
+      const existing = (role === 'other' ? Object.values(data.persons) : relativesOf(p, role)).find(q => sameName(q, r));
+      // Schon mit anderer Verwandtschaft eingetragen (z. B. Partner statt Kind)? Dann nicht noch einmal vorschlagen
+      const allRel = ['father', 'mother', 'spouse', 'child', 'sibling'].flatMap(x => relativesOf(p, x));
+      if (!existing && allRel.some(q => sameName(q, r))) return;
+      if (existing && r.birthName && r.lastName && r.lastName !== existing.lastName && existing.lastName === r.birthName) {
+        // „Monika Schulz geb. Weber“: verheiratet, neuer Nachname
+        fieldSug(existing, 'lastName', r.lastName, base, fullName(existing));
+        if (!existing.birthName) fieldSug(existing, 'birthName', r.birthName, base, fullName(existing));
+      } else if (existing) {
         ['birthName', 'birthDate', 'birthPlace', 'deathDate', 'deathPlace', 'occupation'].forEach(f => { if (r[f] && (!existing[f] || moreExact(f, existing[f], r[f]))) fieldSug(existing, f, r[f], base, fullName(existing)); });
       } else {
         const replaces = (role === 'father' && P(p.father)) || (role === 'mother' && P(p.mother));
         const noParents = role === 'sibling' && !P(p.father) && !P(p.mother) && !items.some(x => x.key === 'VATER' || x.key === 'MUTTER');
-        out.push(Object.assign({ type: 'new', role, data: r, replaces: replaces ? fullName(replaces) : '', disabled: noParents,
+        out.push(Object.assign({ type: 'new', role, relLabel: it.relLabel || '', partnerOf: it.partnerOf || '', data: r, replaces: replaces ? fullName(replaces) : '', disabled: noParents,
           checked: !replaces && !noParents && base.sure !== 'unsicher' }, base));
       }
     }
   });
   return out;
 }
-const ROLE_LABEL = { father: 'Vater', mother: 'Mutter', spouse: 'Partner/in', child: 'Kind', sibling: 'Geschwister' };
+const ROLE_LABEL = { father: 'Vater', mother: 'Mutter', spouse: 'Partner/in', child: 'Kind', sibling: 'Geschwister', other: 'andere/r Verwandte/r' };
 // Vorschläge als Liste zum Abhaken anzeigen
 function renderSugs(sugs) {
   return '<h3>Vorschläge – abhaken, was stimmt:</h3>' + sugs.map((s, i) => {
@@ -758,7 +770,10 @@ function renderSugs(sugs) {
     if (s.type === 'field') txt = `${s.who ? '<b>' + esc(s.who) + '</b> – ' : ''}${FIELD_LABEL[s.field]}: <b>${esc(s.field === 'gender' ? ({ m: 'Mann', w: 'Frau' }[s.value] || s.value) : s.value)}</b>${s.old ? ` <span class="warn">(bisher: ${esc(s.old)})</span>` : ''}`;
     else {
       const d = s.data;
-      txt = `Neue Person (${ROLE_LABEL[s.role]}): <b>${esc([d.firstName, d.lastName].filter(Boolean).join(' '))}</b>${d.birthName ? ' geb. ' + esc(d.birthName) : ''} ${esc(lifeSpan(d))}${d.birthPlace ? ', ' + esc(d.birthPlace) : ''}`
+      const sel = `<select class="rolesel" data-r="${i}">${Object.keys(ROLE_LABEL).map(k => `<option value="${k}"${k === s.role ? ' selected' : ''}>${ROLE_LABEL[k]}</option>`).join('')}</select>`;
+      txt = `Neue Person: <b>${esc([d.firstName, d.lastName].filter(Boolean).join(' '))}</b>${d.birthName ? ' geb. ' + esc(d.birthName) : ''} ${esc(lifeSpan(d))}${d.birthPlace ? ', ' + esc(d.birthPlace) : ''}`
+        + (s.relLabel ? ` <span class="hint">(laut Text: ${esc(s.relLabel)}${s.partnerOf ? ' – wird mit ihr/ihm verbunden' : s.role === 'other' ? ' – wird ohne Verbindung angelegt' : ''})</span>` : '')
+        + `<br>als ${sel}`
         + (s.replaces ? ` <span class="warn">(ersetzt bisherige/n: ${esc(s.replaces)})</span>` : '')
         + (s.disabled ? ' <span class="warn">(geht erst, wenn Vater oder Mutter eingetragen sind)</span>' : '');
     }
@@ -766,9 +781,13 @@ function renderSugs(sugs) {
       <span>${txt}<br><small class="sure-${s.sure}">${s.sure}</small>${s.source ? ' <small>· ' + linkify(s.source) + '</small>' : ''}</span></label>`;
   }).join('');
 }
+function collectChosen(box, sugs) {
+  box.querySelectorAll('select.rolesel').forEach(x => { sugs[+x.dataset.r].role = x.value; });
+  return [...box.querySelectorAll('input[type=checkbox]:checked')].map(x => sugs[+x.dataset.i]);
+}
 // Abgehakte Vorschläge übernehmen (Felder setzen, neue Verwandte anlegen und verknüpfen, Quellen notieren)
 function applySuggestions(p, chosen) {
-  const order = { father: 0, mother: 1, spouse: 3, child: 4, sibling: 5 };
+  const order = { father: 0, mother: 1, spouse: 3, child: 4, sibling: 5, other: 6 };
   chosen.sort((a, b) => (a.type === 'field' ? 2 : order[a.role]) - (b.type === 'field' ? 2 : order[b.role]));
   // Quellen sammeln: pro Person und Quelle nur eine Zeile („Geburtsdatum, Sterbeort: Link (sicher)“)
   const groups = new Map();
@@ -788,7 +807,12 @@ function applySuggestions(p, chosen) {
         gender: s.role === 'father' ? 'm' : s.role === 'mother' ? 'w' : (d.gender || 'u'),
         status: d.deathDate || d.deathPlace || (by && by <= THIS_YEAR - PROTECT_YEARS) ? 'verstorben' : (d.status || 'unbekannt') });
       srcLine(np, 'Angaben', s);
-      data.persons[np.id] = np; link(p.id, s.role, np.id);
+      data.persons[np.id] = np;
+      const mate = s.role === 'other' && s.partnerOf ? Object.values(data.persons).find(q => q.id !== np.id && sameName(q, parseSpoken(s.partnerOf)) && (childrenOf(p.id).includes(q) || chosen.some(c => c.data && sameName(c.data, q)))) : null;
+      if (mate) { link(mate.id, 'spouse', np.id); np.notes = `Laut Fund: Partner/in von ${fullName(mate)}.`; }
+      else if (s.role === 'other') np.notes = `Laut Fund: ${s.relLabel || 'Verwandte/r'} von ${fullName(p)} – Verbindung im Stammbaum bitte selbst setzen.`;
+      else if (s.role === 'sibling' && !P(p.father) && !P(p.mother)) np.notes = `Laut Fund: Geschwister von ${fullName(p)} – Eltern fehlen noch, deshalb noch nicht verbunden.`;
+      else link(p.id, s.role, np.id);
     }
   });
   groups.forEach(({ q, what, s }) => {
@@ -826,7 +850,7 @@ function importClaude(id) {
   dlg.querySelector('#cRead').onclick = show;
   dlg.querySelector('#cancel').onclick = () => openResearch(id);
   dlg.querySelector('#ok').onclick = () => {
-    const chosen = [...dlg.querySelectorAll('#cOut input:checked')].map(x => sugs[+x.dataset.i]);
+    const chosen = collectChosen(dlg.querySelector('#cOut'), sugs);
     if (!chosen.length) { alert('Bitte mindestens einen Vorschlag abhaken.'); return; }
     applySuggestions(p, chosen);
     const date = new Date().toLocaleDateString('de-DE');
@@ -899,7 +923,14 @@ async function wikiItems(url) {
     items.push({ key, value: parts.join(', ') });
   }));
   const g = wdIds(c, 'P21')[0];
-  return { items, name: wdLabel(main, w.lang) || page.title, gender: g === 'Q6581097' ? 'm' : g === 'Q6581072' ? 'w' : '' };
+  // Zusätzlich den Artikeltext holen: dort stehen Ehefrau und Kinder oft, auch wenn Wikidata sie nicht kennt
+  let text = '';
+  try {
+    const q2 = new URLSearchParams({ action: 'query', prop: 'extracts', explaintext: '1', titles: page.title || w.title, redirects: '1', format: 'json', origin: '*' });
+    const r2 = await fetch(`https://${w.lang}.wikipedia.org/w/api.php?` + q2);
+    text = (Object.values(((await r2.json()).query || {}).pages || {})[0] || {}).extract || '';
+  } catch (e) {}
+  return { items, text, name: wdLabel(main, w.lang) || page.title, gender: g === 'Q6581097' ? 'm' : g === 'Q6581072' ? 'w' : '' };
 }
 
 // ---- Beliebige Webseite / PDF auslesen ----
@@ -962,19 +993,82 @@ function findSnippets(p, text) {
   return snips.sort((a, b) => b.score - a.score).slice(0, 6);
 }
 
+// ---- Traueranzeigen: Namen der Trauernden (meist zeilenweise unter „In Liebe …“) ----
+const REL_WORDS = {
+  kind: /^(Kinder|Sohn|Söhne|Tochter|Töchter)$/i, enkel: /^(Enkel\w*|Urenkel\w*)$/i, schwieger: /^(Schwieger\w*)$/i,
+  partner: /^(Ehefrau|Ehemann|Frau|Mann|Gattin|Gatte|Lebensgefährt\w*|Partner\w*)$/i,
+  geschw: /^(Bruder|Brüder|Schwester\w*|Geschwister)$/i, nichte: /^(Neffe\w*|Nichte\w*|Cousin\w*|Tante|Onkel)$/i
+};
+function relOfWord(w) {
+  if (REL_WORDS.kind.test(w)) return ['KIND', ''];
+  if (REL_WORDS.partner.test(w)) return ['EHEPARTNER', ''];
+  if (REL_WORDS.geschw.test(w)) return ['GESCHWISTER', ''];
+  if (REL_WORDS.enkel.test(w)) return ['ANDERE', 'Enkel/in'];
+  if (REL_WORDS.schwieger.test(w)) return ['ANDERE', 'Schwiegerkind'];
+  if (REL_WORDS.nichte.test(w)) return ['ANDERE', w];
+  return null;
+}
+function obituaryNames(raw, p) {
+  const text = String(raw || '');
+  const trig = text.match(/(?:In\s+(?:Liebe(?:\s+und\s+Dankbarkeit)?|stiller\s+Trauer|tiefer\s+Trauer|Dankbarkeit|Liebe\s+und\s+Trauer)|Es\s+trauern|In\s+Liebe\s+und\s+Dankbarkeit)\s*[:,]?/i);
+  if (!trig) return [];
+  // Wer ist der/die Verstorbene für die Unterzeichner? („um unsere liebe Mutter“ → Unterzeichner sind Kinder)
+  const before = text.slice(0, trig.index);
+  const um = before.match(/\b(?:um|von)\s+(?:unsere[nmr]?|meine[nmr]?|unser|mein)\s+(?:(?:liebe[nmr]?|gute[nmr]?|herzensgute[nmr]?|treue[nmr]?)\s+)*(Mutter|Mama|Vater|Papa|Oma|Opa|Mann|Ehemann|Frau|Ehefrau|Bruder|Schwester)/i);
+  let def = ['KIND', ''];
+  if (um) { const w = um[1].toLowerCase(); if (/mann|frau/.test(w)) def = ['EHEPARTNER', '']; else if (/bruder|schwester/.test(w)) def = ['GESCHWISTER', '']; }
+  let after = text.slice(trig.index + trig[0].length, trig.index + trig[0].length + 700);
+  let lines = after.split(/\n/).map(l => l.trim()).filter(Boolean);
+  if (lines.length <= 1) lines = after.split(/[;]|,\s+(?=[A-ZÄÖÜ])/).map(l => l.trim()).filter(Boolean);
+  const out = [], fam = p.lastName || p.birthName || '';
+  for (const line of lines.slice(0, 14)) {
+    if (/Trauerfeier|Beerdigung|Beisetzung|Urnen|findet|statt|Uhr|Friedhof|Kirche|Traueradresse|Anschrift|Kondolenz|Spende|^\d/.test(line)) break;
+    let l = line.replace(/\bgeb\.\s*/g, 'geborene ').replace(/\s+mit\s+Famili\w*|\s+und\s+Famili\w*|\s+mit\s+allen\s+Angehörigen|\s+im\s+Namen\s+aller\s+Angehörigen/gi, '').replace(/[.:]+$/, '');
+    let lineRel = null;
+    const lm = l.match(/^(?:Deine?|Eure?|Ihre?|Seine?|Unsere?|Die)?\s*([A-ZÄÖÜ][a-zäöüß]+)\b\s*:?\s*/);
+    if (lm && relOfWord(lm[1])) { lineRel = relOfWord(lm[1]); l = l.slice(lm[0].length); }
+    const chunks = l.split(/,\s*|\s+und\s+|\s+sowie\s+|\s+mit\s+/);
+    const names = []; let lastFull = '';
+    chunks.forEach((c, i) => {
+      c = c.trim(); let rel = lineRel || def;
+      const cm = c.match(/^([A-ZÄÖÜ][a-zäöüß]+)\s+/);
+      let partner = false;
+      if (cm && relOfWord(cm[1])) { const r = relOfWord(cm[1]); partner = i > 0 && r[0] === 'EHEPARTNER'; rel = partner ? ['ANDERE', 'Schwiegerkind'] : r; c = c.slice(cm[0].length); }
+      else if (i > 0 && !lineRel && /\bmit\s+/.test(l) && l.indexOf(c) > l.search(/\smit\s/)) { rel = ['ANDERE', 'Schwiegerkind']; partner = true; }
+      const n = takeName(c); if (!n) return;
+      const core = n.replace(/\s+geborene.*$/, '').replace(/\s+\d{4}.*$/, '').split(/\s+/);
+      if (core.length >= 2) lastFull = core.slice(1).join(' ');
+      names.push({ n, rel, partnerOf: partner && names[0] ? names[0].n : '' });
+    });
+    names.forEach(({ n, rel, partnerOf }) => {
+      let v = n;
+      if (v.split(/\s+/).length === 1) v += ' ' + (lastFull || fam);
+      if (rel[0] === 'ANDERE' && rel[1] === 'Schwiegerkind' && v.split(/\s+/).length === 1) v += ' ' + (lastFull || fam);
+      let po = partnerOf; if (po && po.split(/\s+/).length === 1) po += ' ' + (lastFull || fam);
+      out.push({ key: rel[0], value: v.replace(/\bgeb\.\s*/g, 'geborene '), sure: 'unsicher', relLabel: po ? 'Partner/in von ' + po.replace(/\s+geborene.*$/, '') : rel[1], partnerOf: po });
+    });
+  }
+  return out;
+}
+
 // ---- Verwandte in freiem Text erkennen („Sohn des …“, „verheiratet mit …“, „Kinder: …“, Traueranzeigen) ----
 const NAME_WORD = "[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'-]+";
 const NAME_RE = new RegExp(`^(?:${NAME_WORD}|von|van|de|zu|der|den|geb\\.|geborene)(?:\\s+(?:${NAME_WORD}|von|van|de|zu|der|den|geb\\.|geborene))*`);
 const NOT_NAMES = /^(Familie|Familien|Enkel|Enkelkinder|Urenkel|Angehörige|Alle|Anverwandte|Freunde|Kinder|Geschwister|Eltern|Die|Der|Das|Wir|Ihre|Seine|Unsere|In|Im|Am|Und|Mit|Zum|Zur|Beerdigung|Trauerfeier)$/;
 function takeName(str) {
-  const m = String(str || '').trim().match(NAME_RE); if (!m) return '';
+  str = String(str || '').trim().replace(/^[(\s]+/, '')
+    .replace(/^(?:(?:im\s+Jahre?|am|im|um)\s+)?(?:\d{1,2}\.\s*(?:\d{1,2}\.|(?:Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember))\s*)?\d{4}\s+/, '')
+    .replace(/^(?:die|den|der|dem)\s+/i, '');
+  const m = str.match(NAME_RE); if (!m) return '';
   let w = m[0].split(/\s+/);
+  // Berufs-/Standesangaben vor dem Namen weglassen („des Bauern Michael Bauer“ → „Michael Bauer“)
+  while (w.length >= 3 && /^(Bauern|Landwirts?|Kaufmanns?|Lehrers?|Pfarrers?|Schmied(e?s)?|Schneiders?|Arztes|Beamten|Gastwirts?|Handwerkers?|Tagelöhners?|Bürgermeisters?|Fabrikanten|Kaufmann|Herrn?|Witwe|Witwers?|Ehefrau|Ehemanns?|Gutsbesitzers?|Müllermeisters?|Bäckermeisters?|Metzgermeisters?|Schuhmachers?|Zimmermanns?|Maurers?|Webers|Knechts?|Magd|Dr|Prof)$/.test(w[0])) w.shift();
   while (w.length && /^(von|van|de|zu|der|den|geb\.|geborene)$/.test(w[w.length - 1])) w.pop();
   w = w.slice(0, 6);
   if (!w.length || NOT_NAMES.test(w[0])) return '';
   let name = w.join(' ');
   // Lebensdaten direkt dahinter: „(1850–1920)“ oder „* 1850“
-  const rest = String(str).trim().slice(m[0].length);
+  const rest = str.slice(m[0].length);
   const d = rest.match(/^\s*\(?\s*\*?\s*(\d{4})\s*(?:[-–]|bis)\s*†?\s*(\d{4})\s*\)?/);
   if (d) name += ` ${d[1]} bis ${d[2]}`;
   return name;
@@ -1010,16 +1104,21 @@ function extractRelatives(text, p) {
   while ((m = reE.exec(t))) { spans.push(m[0]); add('EHEPARTNER', takeName(m[1])); }
   const reE2 = /\b(?:Ehefrau|Ehemann|Gattin|Gatte|Ehegattin|Ehegatte|Witwe von|Witwer von)\s*:?\s+(?:war\s+|ist\s+)?(.+?)(?=[,.;]|$)/g;
   while ((m = reE2.exec(t))) { spans.push(m[0]); add('EHEPARTNER', takeName(m[1])); }
+  const reE3 = /\b(?:seine[rm]?|ihre[rm]?|mit\s+seiner|mit\s+ihrem)\s+(?:zweiten\s+|ersten\s+)?(?:Frau|Ehefrau|Mann|Ehemann|Gattin|Gatte)\s+(.+?)(?=[,.;]|\s+(?:hatte|bekam|lebte|zog|starb|war)\b|$)/gi;
+  while ((m = reE3.exec(t))) { spans.push(m[0]); add('EHEPARTNER', takeName(m[1])); }
   // Kinder und Geschwister als Liste
   const reK = /\b(Kinder|Söhne|Töchter|Geschwister|Brüder|Schwestern)\s*:?\s+(.+?)(?=[.;]|$)/g;
   while ((m = reK.exec(t))) spans.push(m[0]) && takeList(m[2]).forEach(n => add(/Geschwister|Brüder|Schwestern/.test(m[1]) ? 'GESCHWISTER' : 'KIND', n));
   const reS = /\b(Sohn|Tochter|Bruder|Schwester)\s*:?\s+(?!des\b|von\b|der\b)(.+?)(?=[,.;]|\s+und\b|$)/g;
   while ((m = reS.exec(t))) spans.push(m[0]) && add(/Sohn|Tochter/.test(m[1]) ? 'KIND' : 'GESCHWISTER', takeName(m[2]));
   // Traueranzeige: „In Liebe: Peter und Monika mit Familien“ → Angehörige, unsicher (oft Kinder)
-  const reT = /\b(?:In Liebe|In stiller Trauer|In tiefer Trauer|In Dankbarkeit|In Liebe und Dankbarkeit)\s*:?\s+(.+?)(?=[.;]|$)/g;
-  while ((m = reT.exec(t))) spans.push(m[0]) && takeList(m[1].replace(/\s+mit\s+Famili\w*/g, '')).forEach(n => add('KIND', n, 'unsicher'));
+  obituaryNames(text, p).forEach(x => { const r = parseSpoken(x.value);
+    if (!(sameName(p, r)) && !items.some(y => sameName(parseSpoken(y.value), r))) items.push(x); });
+
   // Text ohne die Verwandten-Stellen (damit z. B. „geborene Hofmann“ der Mutter nicht der Person zugeordnet wird)
   let rest = t; spans.forEach(x => { rest = rest.replace(x, '. '); });
+  const ob = rest.search(/In\s+(?:Liebe|stiller\s+Trauer|tiefer\s+Trauer|Dankbarkeit)|Es\s+trauern/i);
+  if (ob >= 0) rest = rest.slice(0, ob);   // Unterschriften der Traueranzeige gehören nicht zur Person
   items.rest = rest;
   return items;
 }
@@ -1072,7 +1171,7 @@ function addFinding(id, pre = {}) {
   const parse = () => {
     const out = dlg.querySelector('#fOut'), text = T().replace(/https?:\/\/\S+/g, ' ');
     if (!text && !wiki) { out.innerHTML = ''; return; }
-    const relItems = wiki ? [] : extractRelatives(text, p);
+    const relItems = extractRelatives(wiki ? (wiki.text || '') : text, p);
     const r = wiki ? {} : parseSpoken(relItems.rest || text), items = wiki ? wiki.items.map(x => Object.assign({}, x)) : [];
     if (wiki) { const n = parseSpoken(wiki.name); r.firstName = n.firstName; r.lastName = n.lastName; }
     const ev = (d, pl) => [d, pl ? 'in ' + pl : ''].filter(Boolean).join(' ');
@@ -1111,7 +1210,7 @@ function addFinding(id, pre = {}) {
     wMsg.textContent = '⏳ Hole Daten aus Wikipedia …';
     try {
       const res = await wikiItems(SRC());
-      if (!res || !res.items.length) { wMsg.textContent = 'In Wikipedia/Wikidata stehen zu diesem Artikel keine Lebensdaten.'; return; }
+      if (!res || (!res.items.length && !res.text)) { wMsg.textContent = 'In Wikipedia/Wikidata stehen zu diesem Artikel keine Lebensdaten.'; return; }
       wiki = res; wMsg.textContent = `✓ Daten zu „${res.name}“ gefunden (${res.items.length}).`; parse();
     } catch (e) { console.warn('wiki', e); wMsg.textContent = 'Wikipedia ist gerade nicht erreichbar. Alternativ: Text im Artikel markieren und kopieren.'; }
   };
@@ -1160,7 +1259,7 @@ function addFinding(id, pre = {}) {
   dlg.querySelector('#ok').onclick = () => {
     const t = T(), s = SRC();
     if (!t && !s) { alert('Bitte etwas eintragen.'); return; }
-    const chosen = [...dlg.querySelectorAll('#fOut input:checked')].map(x => sugs[+x.dataset.i]);
+    const chosen = collectChosen(dlg.querySelector('#fOut'), sugs);
     applySuggestions(p, chosen);
     const date = new Date().toLocaleDateString('de-DE');
     const short = t.length > 800 ? t.slice(0, 800) + ' …' : t;

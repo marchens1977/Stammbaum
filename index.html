@@ -139,6 +139,13 @@
   .hiddendate { position: absolute; right: 0; bottom: 0; width: 46px !important; height: 1px; opacity: 0; pointer-events: none; padding: 0 !important; border: 0 !important; }
   .datehint { font-size: .8rem; color: var(--green2); min-height: 1.1em; margin-top: 3px; }
   .datehint.free { color: var(--muted); }
+  .voicebtn { width: 100%; margin-bottom: 4px; background: #e5efe0; border-color: #b2c9a7; font-weight: 600; }
+  .voice { background: #f3ecd9; border-radius: 12px; padding: 10px; margin-bottom: 6px; }
+  .voice textarea { min-height: 70px; margin: 8px 0; }
+  .voice .btn.rec { background: #b03a3a; color: #fff; border-color: #b03a3a; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .7; } }
+  .flash { animation: flash 2.5s ease-out; }
+  @keyframes flash { 0% { background: #fde68a; } 100% { background: #fff; } }
   details.more { margin-top: 16px; border-top: 1px solid #eadfc4; padding-top: 6px; }
   details.more summary { cursor: pointer; color: var(--green); font-weight: 600; padding: 8px 0; }
 </style>
@@ -552,6 +559,78 @@ function suggestions(fields) {
   return [...set].sort((a, b) => a.localeCompare(b, 'de')).map(v => `<option value="${esc(v)}">`).join('');
 }
 
+// ---- Spracheingabe: gesprochenen Satz in Felder zerlegen ----
+// Beispiel: „Karl Weber, geboren am 17. Juni 1880 in Rothenburg, gestorben 1944, von Beruf Schmied“
+const PARTICLES = ['von', 'van', 'de', 'zu', 'der', 'den', 'vom', 'zum'];
+function capWords(s) {
+  const w = s.trim().split(/\s+/);
+  return w.map(x => w.length > 1 && PARTICLES.includes(x.toLowerCase()) ? x.toLowerCase() : x[0].toUpperCase() + x.slice(1)).join(' ');
+}
+function capFirst(s) { s = s.trim(); return s ? s[0].toUpperCase() + s.slice(1) : s; }
+function clean(s) { return String(s || '').replace(/^[\s,.;:–-]+|[\s,.;:–-]+$/g, '').replace(/\s+und$/i, '').trim(); }
+function parseEvent(seg) {
+  seg = clean(seg); const out = {};
+  const pm = seg.match(/(?:^|\s)(?:in|zu|im ort)\s+(.+)$/i);
+  if (pm && !/^\d/.test(pm[1]) && !/^(jahr|jahre|januar|februar|märz|april|mai|juni|juli|august|september|oktober|november|dezember)\b/i.test(pm[1])) {
+    out.place = capFirst(clean(pm[1])); seg = seg.slice(0, pm.index);
+  }
+  let d = clean(seg).replace(/^(am|im jahre?|im|anno|des jahres)\s+/i, '').replace(/\s+im jahre?\s+/i, ' ').replace(/^den\s+/i, '');
+  let n = normDate(d);
+  if (!prettyDate(n)) {   // Datum irgendwo im Text suchen
+    const m = d.match(/(?:(um|ca\.?|circa|etwa|ungefähr|vor|nach)\s+)?(\d{1,2}\.?\s*[a-zäA-ZÄ]{3,}\.?\s*\d{4}|\d{1,2}\.\d{1,2}\.\d{4}|[a-zäA-ZÄ]{3,}\s+\d{4}|\d{4})/i);
+    if (m) { n = normDate((m[1] ? m[1] + ' ' : '') + m[2]); if (!prettyDate(n)) n = ''; } else n = '';
+  }
+  if (n) out.date = n;
+  return out;
+}
+function parseSpoken(text) {
+  const r = {};
+  let s = ' ' + String(text || '').replace(/\s+/g, ' ').trim() + ' ';
+  let m;
+  // Beruf
+  if ((m = s.match(/\s(?:war\s+)?([A-Za-zÄÖÜäöüß-]+)\s+von beruf(?=\s*(?:[,.;]|$|\s(?:geboren|geborene|gestorben|verstorben|lebt)\b))/i))) {
+    r.occupation = capWords(m[1]); s = s.replace(m[0], ' ');
+  } else if ((m = s.match(/\s(?:von beruf|beruf|arbeitete als|tätig als|arbeitet als)\s*:?\s*([^,.;]+?)(?=\s(?:geboren|geborene|gestorben|verstorben|lebt)\b|[,.;]|\s*$)/i))) {
+    r.occupation = capWords(clean(m[1])); s = s.replace(m[0], ' ');
+  } else if ((m = s.match(/\s(?:war\s+)?([A-Za-zÄÖÜäöüß-]+)\s+von beruf\b/i))) {
+    r.occupation = capWords(m[1]); s = s.replace(m[0], ' ');
+  }
+  // Lebt noch?
+  if ((m = s.match(/\s(lebt noch|lebt|ist noch am leben)\b/i))) { r.status = 'lebt'; s = s.replace(m[0], ' '); }
+  // In Abschnitte zerlegen: Name | geboren … | gestorben … | geborene …
+  const re = /(?:^|\s)(geborene|geb\.|mädchenname|geburtsname|geboren|gestorben|verstorben|gest\.|tot seit)(?=\s|$)/gi;
+  const hits = []; while ((m = re.exec(s))) hits.push({ kw: m[1].toLowerCase(), start: m.index, end: m.index + m[0].length });
+  const namePart = clean(hits.length ? s.slice(0, hits[0].start) : s);
+  hits.forEach((h, i) => {
+    const seg = s.slice(h.end, i + 1 < hits.length ? hits[i + 1].start : s.length);
+    if (/^(geborene|geb\.|mädchenname|geburtsname)$/.test(h.kw)) {
+      const w = clean(seg).split(/[\s,]+/)[0]; if (w) { r.birthName = capWords(w); if (h.kw !== 'geburtsname') r.gender = 'w'; }
+      // Rest nach dem Geburtsnamen kann z. B. „1880 in Ulm“ sein
+    } else if (h.kw === 'geboren') {
+      const e = parseEvent(seg); if (e.date) r.birthDate = e.date; if (e.place) r.birthPlace = e.place;
+    } else {
+      const e = parseEvent(seg); if (e.date) r.deathDate = e.date; if (e.place) r.deathPlace = e.place; r.status = 'verstorben';
+    }
+  });
+  // Name, evtl. mit „Herr/Frau“ und Jahreszahlen „1880 bis 1944“
+  let name = namePart;
+  if ((m = name.match(/\s*\(?\s*(\d{4})\s*(?:bis|-|–)\s*(\d{4})\s*\)?\s*$/))) {
+    if (!r.birthDate) r.birthDate = m[1]; if (!r.deathDate) { r.deathDate = m[2]; r.status = 'verstorben'; }
+    name = clean(name.slice(0, m.index));
+  }
+  if ((m = name.match(/^(herr|frau)\s+/i))) { r.gender = m[1].toLowerCase() === 'herr' ? 'm' : 'w'; name = name.slice(m[0].length); }
+  name = name.replace(/[^A-Za-zÄÖÜäöüß\s'-]/g, ' ').trim();
+  if (name) {
+    const w = name.split(/\s+/);
+    if (w.length === 1) r.firstName = capWords(w[0]);
+    else {
+      let k = w.length - 1; while (k > 1 && PARTICLES.includes(w[k - 1].toLowerCase())) k--;
+      r.firstName = capWords(w.slice(0, k).join(' ')); r.lastName = capWords(w.slice(k).join(' '));
+    }
+  }
+  return r;
+}
+
 // Personen-Formular: id = vorhandene Person, sonst neue Person
 // preset = Vorbelegung, onCreate = Verknüpfung, again = Knopf „Speichern + noch eins“
 function personForm(id, preset = {}, onCreate = null, title = null, again = null) {
@@ -568,6 +647,17 @@ function personForm(id, preset = {}, onCreate = null, title = null, again = null
   const moreOpen = !isNew && (p.occupation || p.notes || p.sources || p.photo || p.father || p.mother || p.spouses.length);
   const dlg = openModal(`
     <h2>${title || (isNew ? 'Neue Person' : 'Person bearbeiten')}</h2>
+    <button type="button" class="btn voicebtn" id="voiceOpen">🎤 Person einsprechen</button>
+    <div class="voice" id="voicePanel" hidden>
+      <div class="hint">Sprich zum Beispiel: <i>„Karl Weber, geboren am 17. Juni 1880 in Rothenburg, gestorben 1944 in Ulm, von Beruf Schmied“</i>.
+        Auch möglich: „Anna Weber geborene Schmidt …“ oder „… lebt noch“.<br><small>Das Zuhören übernimmt Chrome (Google), genau wie beim Mikrofon der Tastatur.</small></div>
+      <textarea id="voiceText" placeholder="Hier erscheint, was du sagst. Du kannst den Text auch eintippen oder korrigieren."></textarea>
+      <div class="two">
+        <button type="button" class="btn" id="voiceMic">🎤 Sprechen</button>
+        <button type="button" class="btn primary" id="voiceApply">✓ In Felder übernehmen</button>
+      </div>
+      <div class="hint" id="voiceMsg"></div>
+    </div>
     <datalist id="dl-first">${suggestions(['firstName'])}</datalist>
     <datalist id="dl-last">${suggestions(['lastName', 'birthName'])}</datalist>
     <datalist id="dl-place">${suggestions(['birthPlace', 'deathPlace'])}</datalist>
@@ -622,6 +712,35 @@ function personForm(id, preset = {}, onCreate = null, title = null, again = null
   };
   dlg.querySelectorAll('[data-seg] button').forEach(b => b.onclick = () => setSeg(b.parentElement.dataset.seg, b.dataset.v));
   setSeg('status', p.status);
+
+  // Spracheingabe
+  const vPanel = dlg.querySelector('#voicePanel'), vText = dlg.querySelector('#voiceText'), vMsg = dlg.querySelector('#voiceMsg'), vMic = dlg.querySelector('#voiceMic');
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null, listening = false;
+  const applyVoice = () => {
+    const r = parseSpoken(vText.value); const filled = [];
+    ['firstName', 'lastName', 'birthName', 'birthDate', 'birthPlace', 'deathDate', 'deathPlace', 'occupation'].forEach(k => {
+      if (r[k]) { field(k).value = r[k]; field(k).classList.remove('flash'); void field(k).offsetWidth; field(k).classList.add('flash'); filled.push(k); }
+    });
+    if (r.gender) setSeg('gender', r.gender);
+    if (r.status) setSeg('status', r.status);
+    if (r.occupation) dlg.querySelector('details.more').open = true;
+    ['birthDate', 'deathDate'].forEach(showHint);
+    vMsg.textContent = filled.length ? '✓ Übernommen – bitte kurz prüfen. Die gelb markierten Felder wurden ausgefüllt.' : 'Ich konnte nichts erkennen. Versuch es bitte noch einmal.';
+  };
+  const startMic = () => {
+    if (!SR) { vMsg.textContent = 'Dein Browser kann hier nicht zuhören. Tipp: Tippe ins Textfeld und nutze das Mikrofon deiner Tastatur.'; vText.focus(); return; }
+    if (listening) { rec.stop(); return; }
+    rec = new SR(); rec.lang = 'de-DE'; rec.interimResults = true; rec.continuous = false;
+    rec.onresult = e => { let t = ''; for (const x of e.results) t += x[0].transcript; vText.value = t; };
+    rec.onerror = e => { vMsg.textContent = e.error === 'not-allowed' ? 'Das Mikrofon ist nicht erlaubt. Bitte im Browser das Mikrofon für diese Seite erlauben.' : 'Es hat nicht geklappt (' + e.error + '). Bitte noch einmal versuchen.'; };
+    rec.onend = () => { listening = false; vMic.textContent = '🎤 Nochmal sprechen'; vMic.classList.remove('rec'); if (vText.value.trim()) applyVoice(); };
+    vText.value = ''; vMsg.textContent = 'Ich höre zu … sprich jetzt.';
+    listening = true; vMic.textContent = '⏹ Fertig'; vMic.classList.add('rec'); rec.start();
+  };
+  dlg.querySelector('#voiceOpen').onclick = () => { vPanel.hidden = false; dlg.querySelector('#voiceOpen').hidden = true; startMic(); };
+  vMic.onclick = startMic;
+  dlg.querySelector('#voiceApply').onclick = applyVoice;
 
   // Datumsfelder: Hinweis anzeigen, beim Verlassen vereinheitlichen, Kalender-Knopf
   const showHint = n => {

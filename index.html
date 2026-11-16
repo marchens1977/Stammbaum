@@ -494,10 +494,8 @@ function openDetail(id) {
     ${p.sources ? '<h3>Quellen</h3><div class="note">' + linkify(p.sources) + '</div>' : ''}
     ${prot
       ? `<div class="research locked">🔒 <b>Geschützt.</b> Diese Person lebt (oder es ist unklar). Deshalb gibt es hier keine KI-Recherche und keine Ahnenforschungs-Seiten – nur eine normale Google-Suche.
-          <a class="btn google-btn" href="${esc(googleUrl(p))}" target="_blank" rel="noopener">🔎 Bei Google suchen</a>
-          <button class="btn google-btn" data-act="ask">📨 ${esc(p.firstName || 'Person')} selbst fragen (WhatsApp/SMS)</button></div>`
-      : `<button class="btn primary research-btn" data-act="research">🔍 Recherche starten</button>
-         <button class="btn research-btn" data-act="ask" style="margin-top:8px">📨 Familie fragen (WhatsApp/SMS)</button>`}
+          <a class="btn google-btn" href="${esc(googleUrl(p))}" target="_blank" rel="noopener">🔎 Bei Google suchen</a></div>`
+      : `<button class="btn primary research-btn" data-act="research">🔍 Recherche starten</button>`}
     <div class="actions">
       <button class="btn primary" data-act="edit">✏️ Bearbeiten</button>
       <button class="btn" data-act="focus">🎯 In die Mitte</button>
@@ -516,30 +514,6 @@ function closeSheet() { sheet.hidden = true; sheetId = null; }
 // ====================== Recherche (Stufe 2) ======================
 // Nur für ungeschützte Personen. Öffnet freie Quellen mit vorausgefülltem Namen
 // und erstellt einen fertigen Text für die Claude-App.
-// Nachfrage per WhatsApp/SMS: bei Lebenden die Person selbst, bei Verstorbenen die Familie
-function askFamily(id) {
-  const p = P(id); if (!p) return;
-  const nm = p.firstName || fullName(p);
-  const missing = [];
-  const full = d => /^\d{2}\.\d{2}\.\d{4}$/.test(d || '');
-  if (!full(p.birthDate)) missing.push('Geburtsdatum'); if (!p.birthPlace) missing.push('Geburtsort');
-  if (p.gender === 'w' && !p.birthName) missing.push('Geburtsname (falls anders)');
-  let text;
-  if (isProtected(p)) {
-    text = `Hallo ${nm}, ich baue gerade unseren Familien-Stammbaum auf (nur privat für die Familie). `
-      + (missing.length ? `Magst du mir kurz noch das schicken: ${missing.join(', ')}?` : 'Stimmen deine Angaben so?')
-      + `\nAm einfachsten so: „${fullName(p)}, geboren am TT.MM.JJJJ in Ort“. Danke! 😊`;
-  } else {
-    if (!full(p.deathDate)) missing.push('Sterbedatum'); if (!p.deathPlace) missing.push('Sterbeort');
-    if (!p.occupation) missing.push('Beruf'); if (!P(p.father) || !P(p.mother)) missing.push('Namen der Eltern');
-    text = `Hallo, ich baue gerade unseren Familien-Stammbaum auf. Weißt du noch etwas über ${fullName(p)}${lifeSpan(p) ? ' (' + lifeSpan(p) + ')' : ''}? `
-      + (missing.length ? `Mir fehlen noch: ${missing.join(', ')}. ` : '')
-      + 'Auch Geschichten oder alte Fotos wären toll. Danke! 😊';
-  }
-  const done = msg => { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3500); };
-  if (navigator.share) navigator.share({ text }).catch(() => {});
-  else copyText(text).then(ok => { window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank', 'noopener'); done(ok ? '✓ Nachricht kopiert' : ''); });
-}
 function googleUrl(p) {
   const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
   return 'https://www.google.com/search?q=' + encodeURIComponent(['"' + name + '"', p.birthPlace].filter(Boolean).join(' '));
@@ -678,7 +652,6 @@ sheet.addEventListener('click', e => {
   else if (act === 'root') { data.rootId = id; save(); openDetail(id); }
   else if (act === 'delete') deletePerson(id);
   else if (act === 'research') openResearch(id);
-  else if (act === 'ask') askFamily(id);
   else addRelative(id, act);
 });
 

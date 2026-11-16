@@ -24,8 +24,8 @@ keine App für Dritte, keine Stammbäume über fremde Personen.
     Knopf „Bei Google suchen“ (Name + Geburtsort). Im Claude-Text werden geschützte Verwandte ohne Angaben genannt.
   - Begründung: KI würde zu Lebenden gezielt Profile zusammentragen; Daten Lebender sollen nicht an KI-Dienste gehen.
   - Für schnelles Füllen ohne Tippen: **„📋 Text einfügen“** (Text aus Google-Treffer, WhatsApp-Antwort, Todesanzeige
-    wird lokal im Handy zerlegt – nichts geht an eine KI) und **„📨 Fragen (WhatsApp/SMS)“** (Lebende selbst fragen,
-    bei Verstorbenen die Familie). Der Nutzer wählt selbst, was er übernimmt.
+    wird lokal im Handy zerlegt – nichts geht an eine KI). Der Nutzer wählt selbst, was er übernimmt.
+  - **Keine Funktion zum Anschreiben von Familienmitgliedern** (Nutzer möchte niemanden behelligen – „📨 Fragen“ wieder entfernt).
 - **Keine gestrichelten Platzhalter im Baum** (Wunsch des Nutzers). Verwandte werden hinzugefügt, indem man die Person antippt und in der Detailansicht „＋ Vater/Mutter/Partner/Kind/Bruder/Schwester“ wählt.
 - KI-Funde sind später nur **Vorschläge mit Quelle**; erst nach Bestätigung durch den Nutzer übernehmen.
 - Keine automatische Suche auf Ancestry/MyHeritage (Nutzungsregeln verbieten das).
@@ -41,7 +41,8 @@ keine App für Dritte, keine Stammbäume über fremde Personen.
 | 2026-11-16 | Alle gestrichelten Platzhalter aus dem Baum entfernt; Hinzufügen nur noch über die Detailansicht |
 | 2026-11-16 | **Stufe 2:** Knopf „🔍 Recherche starten“ (nur ungeschützte Personen): fertiger Text für die Claude-App (kopieren + claude.ai öffnen; geschützte Verwandte ohne Angaben), Quellenliste mit vorausgefüllter Suche (passend nach Zeit/Ort sortiert, Name wird zusätzlich kopiert), „Fund eintragen“ mit Quelle und Sicherheit (sicher/wahrscheinlich/unsicher) |
 | 2026-11-16 | Schutzregel geändert: alle Verstorbenen recherchierbar; Lebende/unklar nur „Bei Google suchen“ |
-| 2026-11-16 | „📋 Text einfügen“ im Formular (liest Zwischenablage; erkennt auch *, †, geb. am, Geburtsdatum:/Geburtsort:) und „📨 Fragen (WhatsApp/SMS)“ mit vorformulierter Nachricht nach fehlenden Angaben |
+| 2026-11-16 | „📋 Text einfügen“ im Formular (liest Zwischenablage; erkennt auch *, †, geb. am, Geburtsdatum:/Geburtsort:) |
+| 2026-11-16 | „📨 Fragen (WhatsApp/SMS)“ auf Wunsch wieder entfernt |
 
 ## 4. Nächste Schritte
 - Stufe 2 ist umgesetzt. Die Such-Adressen (URL-Parameter) von GEDBAS, Arolsen, DDB, Find a Grave konnten

@@ -222,7 +222,7 @@ const MAX_ANCESTOR_GENS = 3;      // wie viele Generationen nach oben (Eltern, G
 const MAX_DESC_GENS = 2;          // wie viele Generationen nach unten (Kinder, Enkel)
 const PROTECT_YEARS = 110;        // wer vor mehr als so vielen Jahren geboren wurde, gilt als verstorben
 const STORE_KEY = 'stammbaum-daten-v1';
-const APP_VERSION = '2026-11-17 Nr. 25';   // bei jeder Änderung hochzählen – steht unten im Menü
+const APP_VERSION = '2026-11-17 Nr. 26';   // bei jeder Änderung hochzählen – steht unten im Menü
 const THIS_YEAR = new Date().getFullYear();
 
 // ====================== Daten ======================
@@ -274,7 +274,6 @@ function connectPerson(id) {
     else if (r === 'sibling' || r === 'auntuncle') {
       const base = r === 'sibling' ? w : via;
       if (!base) { alert('Dafür fehlen noch Eltern im Stammbaum.'); return; }
-      if (!P(base.father) && !P(base.mother)) { alert(`Geschwister werden über die Eltern verbunden – bei ${base.firstName} sind noch keine Eltern eingetragen.`); return; }
       link(base.id, 'sibling', id);
     }
     p.notes = String(p.notes || '').replace(/\n*Laut Fund:[^\n]*Verbindung im Stammbaum bitte selbst setzen\.?/g, '').trim();
@@ -317,7 +316,7 @@ const P = id => (id ? data.persons[id] : undefined);
 function newPerson(o = {}) {
   return Object.assign({ id: uid(), firstName: '', lastName: '', birthName: '', gender: 'u', status: 'unbekannt',
     birthDate: '', birthPlace: '', deathDate: '', deathPlace: '', occupation: '', notes: '', sources: '',
-    photo: '', father: null, mother: null, spouses: [] }, o);
+    photo: '', father: null, mother: null, spouses: [], siblings: [] }, o);
 }
 
 // ====================== Hilfsfunktionen ======================
@@ -334,9 +333,11 @@ function lifeSpan(p) {
 function byBirth(a, b) { return (yearOf(a.birthDate) || 9999) - (yearOf(b.birthDate) || 9999); }
 function childrenOf(id) { return Object.values(data.persons).filter(c => c.father === id || c.mother === id).sort(byBirth); }
 function siblingsOf(p) {
-  if (!p.father && !p.mother) return [];
-  return Object.values(data.persons).filter(s => s.id !== p.id &&
-    ((p.father && s.father === p.father) || (p.mother && s.mother === p.mother))).sort(byBirth);
+  // über gemeinsame Eltern ODER direkt als Geschwister verbunden (wenn die Eltern noch fehlen)
+  const direct = new Set((p.siblings || []).filter(id => P(id)));
+  Object.values(data.persons).forEach(x => { if ((x.siblings || []).includes(p.id)) direct.add(x.id); });
+  return Object.values(data.persons).filter(s => s.id !== p.id && (direct.has(s.id) ||
+    (p.father && s.father === p.father) || (p.mother && s.mother === p.mother))).sort(byBirth);
 }
 function sortedPersons() {
   return Object.values(data.persons).sort((a, b) =>
@@ -410,9 +411,22 @@ function renderTree(fit) {
   // --- Geschwister (links daneben, mit den Eltern verbunden) ---
   const sibs = siblingsOf(f);
   const parentY = -CH / 2 - VG / 2;
-  sibs.slice().reverse().forEach((s, k) => {
-    const x = -(k + 1) * step; nodes.push({ id: s.id, x, y: 0 });
+  let cur = -step;
+  sibs.slice().reverse().forEach(sb => {   // jüngste/älteste nach links, Partner jeweils noch weiter links daneben
+    const x = cur; nodes.push({ id: sb.id, x, y: 0 });
     lines.push(`M${x},${-CH / 2}V${parentY}H0`);
+    const m = (sb.spouses || []).map(P).filter(Boolean)[0];
+    if (m && m.id !== f.id) { nodes.push({ id: m.id, x: x - step, y: 0 }); lines.push(`M${x - CW / 2},0H${x - step + CW / 2}`); marks.push({ x: x - step / 2, y: -6 }); cur -= step; }
+    cur -= step;
+  });
+  // Tanten/Onkel: Geschwister des Vaters links neben dem Vater, der Mutter rechts neben der Mutter
+  [['father', -1], ['mother', 1]].forEach(([k, dir]) => {
+    const par = P(f[k]); const pp = pos['1:' + (k === 'father' ? 0 : 1)]; if (!par || !pp) return;
+    siblingsOf(par).filter(a => !nodes.some(n => n.id === a.id)).forEach((a, i) => {
+      const x = pp.x + dir * (i + 1) * step, y = pp.y;
+      nodes.push({ id: a.id, x, y });
+      lines.push(`M${x},${y - CH / 2}V${y - CH / 2 - VG / 2}H${pp.x}`);
+    });
   });
 
   // --- Partner (rechts daneben) ---
@@ -963,10 +977,7 @@ function applySuggestions(p, chosen) {
     if (kind === 'spouse') link(np.id, 'spouse', T.id);
     else if (kind === 'parent') T[np.gender === 'w' ? 'mother' : 'father'] = np.id;
     else if (kind === 'child') link(T.id, 'child', np.id);
-    else if (kind === 'sibling') {
-      if (P(T.father) || P(T.mother)) link(T.id, 'sibling', np.id);
-      else np.notes = `Laut Fund: Geschwister von ${fullName(T)} – bei ${T.firstName} fehlen noch die Eltern, deshalb noch nicht verbunden.`;
-    }
+    else if (kind === 'sibling') link(T.id, 'sibling', np.id);
   } catch (e) { console.warn('verbinden', e); result.errors++; } });
   groups.forEach(({ q, what, s }) => {
     const line = `${what.join(', ')}: ${s.source} (${s.sure})`;
@@ -976,11 +987,12 @@ function applySuggestions(p, chosen) {
 }
 // Hat die Person irgendeine Verbindung im Stammbaum?
 function isConnected(q) {
-  return !!(P(q.father) || P(q.mother) || (q.spouses || []).some(P) || Object.values(data.persons).some(x => x.father === q.id || x.mother === q.id));
+  return !!(P(q.father) || P(q.mother) || (q.spouses || []).some(P) || siblingsOf(q).length || Object.values(data.persons).some(x => x.father === q.id || x.mother === q.id));
 }
 // Rückmeldung nach dem Speichern: was wurde angelegt, was ist noch nicht verbunden?
 function showSaveResult(p, res) {
   if (!res || (!res.created.length && !res.errors)) { openDetail(p.id); return; }
+  data.focusId = p.id; showTree(); renderTree(true);   // Ergebnis gleich im Baum sichtbar
   const made = res.created.map(P).filter(Boolean), loose = made.filter(q => !isConnected(q) || /noch nicht verbunden|Verbindung bitte noch setzen/.test(q.notes || ''));
   const dlg = openModal(`<h2>✓ Gespeichert</h2>
     <p><b>${made.length} neue Person${made.length === 1 ? '' : 'en'}</b> angelegt${res.updated ? ` und ${res.updated} Angabe(n) ergänzt` : ''}.</p>
@@ -990,7 +1002,7 @@ function showSaveResult(p, res) {
     ${made.length - loose.length ? `<p class="hint">Verbunden: ${made.filter(q => !loose.includes(q)).map(q => esc(q.firstName)).join(', ')}</p>` : ''}
     <p class="hint">Alle Personen findest du auch unter <b>Liste</b>.</p>
     <div class="actions"><button class="btn wide primary" id="ok">Fertig</button></div>`);
-  dlg.querySelector('#ok').onclick = () => { closeModal(); openDetail(p.id); };
+  dlg.querySelector('#ok').onclick = () => { closeModal(); data.focusId = p.id; save(); showTree(); renderTree(true); };
   dlg.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { closeModal(); openDetail(b.dataset.go); });
 }
 function importClaude(id) {
@@ -2121,6 +2133,10 @@ function link(baseId, kind, otherId) {
   } else if (kind === 'sibling') {
     if (P(b.father)) o.father = b.father;
     if (P(b.mother)) o.mother = b.mother;
+    if (!P(b.father) && !P(b.mother)) {   // Eltern fehlen noch → direkt als Geschwister verbinden
+      b.siblings = b.siblings || []; if (!b.siblings.includes(otherId)) b.siblings.push(otherId);
+      o.siblings = o.siblings || []; if (!o.siblings.includes(baseId)) o.siblings.push(baseId);
+    }
   } else if (kind === 'child') {
     if (b.gender === 'w' || (b.gender !== 'm' && o.father)) o.mother = baseId; else o.father = baseId;
     const sp = b.spouses.filter(P);
@@ -2129,15 +2145,6 @@ function link(baseId, kind, otherId) {
 }
 function addRelative(baseId, kind) {
   const b = P(baseId); if (!b) return;
-  if (kind === 'sibling' && !P(b.father) && !P(b.mother)) {
-    const dlg = openModal(`<h2>Bruder / Schwester von ${esc(fullName(b))}</h2>
-      <p>Geschwister werden über die gemeinsamen Eltern verbunden. Bitte trag zuerst <b>Vater oder Mutter</b> ein –
-      der Name darf auch erst einmal „Unbekannt“ sein.</p>
-      <div class="actions"><button class="btn primary" data-k="father">＋ Vater</button><button class="btn primary" data-k="mother">＋ Mutter</button>
-      <button class="btn wide" data-k="">Abbrechen</button></div>`);
-    dlg.querySelectorAll('[data-k]').forEach(x => x.onclick = () => { closeModal(); if (x.dataset.k) addRelative(baseId, x.dataset.k); });
-    return;
-  }
   const preset = {};
   const fam = b.birthName && b.gender === 'w' ? b.birthName : b.lastName;   // Familienname der Eltern
   if (kind === 'father') { preset.gender = 'm'; preset.lastName = fam; preset.status = 'unbekannt'; }
@@ -2179,6 +2186,7 @@ function deletePerson(id) {
   Object.values(data.persons).forEach(o => {
     if (o.father === id) o.father = null; if (o.mother === id) o.mother = null;
     o.spouses = (o.spouses || []).filter(s => s !== id);
+    o.siblings = (o.siblings || []).filter(s => s !== id);
   });
   if (data.focusId === id) data.focusId = null; if (data.rootId === id) data.rootId = null;
   save(); closeSheet(); refresh(true);
@@ -2363,6 +2371,15 @@ function exportGedcom() {
   };
   ps.forEach(p => (p.spouses || []).forEach(s => { if (P(s)) fam(p.id, s); }));
   ps.forEach(p => { const fa = P(p.father) ? p.father : null, mo = P(p.mother) ? p.mother : null; if (fa || mo) fam(fa, mo).children.push(p.id); });
+  // Geschwister ohne eingetragene Eltern: gemeinsame Familie ohne Eltern (GEDCOM erlaubt das)
+  ps.forEach(p => {
+    if (P(p.father) || P(p.mother)) return;
+    const grp = [p.id].concat(siblingsOf(p).filter(x => !P(x.father) && !P(x.mother)).map(x => x.id));
+    if (grp.length < 2) return;
+    const k = 'SIB|' + grp.slice().sort()[0];
+    if (!fams.has(k)) fams.set(k, { parents: [], children: [], id: '@F' + (fams.size + 1) + '@' });
+    const f = fams.get(k); grp.forEach(id => { if (!f.children.includes(id)) f.children.push(id); });
+  });
   const L = ['0 HEAD', '1 SOUR UNSER_STAMMBAUM', '1 GEDC', '2 VERS 5.5.1', '2 FORM LINEAGE-LINKED', '1 CHAR UTF-8'];
   const multi = (lvl, tag, text) => String(text).split(/\r?\n/).forEach((ln, i) => L.push(i ? `${lvl + 1} CONT ${ln}` : `${lvl} ${tag} ${ln}`));
   ps.forEach(p => {
@@ -2434,6 +2451,7 @@ function importGedcom(text) {
     });
     if (h && w) { if (!persons[h].spouses.includes(w)) persons[h].spouses.push(w); if (!persons[w].spouses.includes(h)) persons[w].spouses.push(h); }
     ch.forEach(c => { if (h) persons[c].father = h; if (w) persons[c].mother = w; });
+    if (!h && !w && ch.length > 1) ch.forEach(c => { persons[c].siblings = ch.filter(x => x !== c); });
   }
   return persons;
 }

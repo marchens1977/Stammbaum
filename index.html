@@ -132,6 +132,8 @@
   .partner-row { display: flex; align-items: center; justify-content: space-between; background: #f3ead4; border-radius: 10px; padding: 6px 10px; margin-bottom: 6px; }
   .partner-row button { background: none; border: none; color: #a33; font-size: 1.1rem; }
   [hidden] { display: none !important; }
+  input.nameinp { display: inline-block; width: auto; min-width: 9em; max-width: 100%; padding: 4px 6px; font: 600 .95rem system-ui, sans-serif; border: 1px solid #c8b895; border-radius: 8px; }
+  div.sugl { display: flex; gap: 10px; align-items: flex-start; } div.sugl input[type=checkbox] { width: 24px; height: 24px; flex: none; margin-top: 1px; }
   div.sug.holds { background: #f4f1e8; opacity: .85; }
   .sugrole select { width: auto; max-width: 100%; padding: 5px 6px; font-size: .88rem; margin: 3px 2px 0 0; border-radius: 8px; border: 1px solid #c8b895; background: #fff; }
   div.sug { background: #fff; border: 1px solid #d8c9a3; border-radius: 12px; padding: 10px; margin: 0 0 8px; font-size: .95rem; }
@@ -223,7 +225,7 @@ const MAX_ANCESTOR_GENS = 3;      // wie viele Generationen nach oben (Eltern, G
 const MAX_DESC_GENS = 2;          // wie viele Generationen nach unten (Kinder, Enkel)
 const PROTECT_YEARS = 110;        // wer vor mehr als so vielen Jahren geboren wurde, gilt als verstorben
 const STORE_KEY = 'stammbaum-daten-v1';
-const APP_VERSION = '2026-11-17 Nr. 28';   // bei jeder Änderung hochzählen – steht unten im Menü
+const APP_VERSION = '2026-11-17 Nr. 29';   // bei jeder Änderung hochzählen – steht unten im Menü
 const THIS_YEAR = new Date().getFullYear();
 
 // ====================== Daten ======================
@@ -436,6 +438,19 @@ function renderTree(fit) {
     const x = (j + 1) * step; nodes.push({ id: sid, x, y: 0 });
     lines.push(`M${j * step + CW / 2},0H${x - CW / 2}`);
     marks.push({ x: j * step + CW / 2 + HG / 2, y: -6 });
+  });
+
+  // --- Geschwister des Partners (rechts neben den Partnern, mit eigenem Verbindungsstrich) ---
+  let rx = (spouses.length + 1) * step;
+  spouses.forEach((sid, j) => {
+    const sp = P(sid), sx = (j + 1) * step, barY = -CH / 2 - VG / 4;
+    siblingsOf(sp).filter(a => a.id !== f.id && !nodes.some(n => n.id === a.id)).forEach(a => {
+      nodes.push({ id: a.id, x: rx, y: 0 });
+      lines.push(`M${rx},${-CH / 2}V${barY}H${sx}V${-CH / 2}`);
+      const m = (a.spouses || []).map(P).filter(Boolean)[0];
+      if (m && !nodes.some(n => n.id === m.id)) { nodes.push({ id: m.id, x: rx + step, y: 0 }); lines.push(`M${rx + CW / 2},0H${rx + step - CW / 2}`); marks.push({ x: rx + step / 2, y: -6 }); rx += step; }
+      rx += step;
+    });
   });
 
   // --- Nachkommen (nach unten) ---
@@ -845,7 +860,7 @@ function buildSuggestions(p, items) {
       } else if (!existing) {
         const replaces = (role === 'father' && P(p.father)) || (role === 'mother' && P(p.mother));
         const noParents = role === 'sibling' && !P(p.father) && !P(p.mother) && !items.some(x => x.key === 'VATER' || x.key === 'MUTTER');
-        out.push(Object.assign({ type: 'new', role, relLabel: it.relLabel || '', partnerOf: it.partnerOf || '', childOf: it.childOf || '', data: r, replaces: replaces ? fullName(replaces) : '', disabled: noParents,
+        out.push(Object.assign({ type: 'new', role, guessedLast: !!it.guessedLast, relLabel: it.relLabel || '', partnerOf: it.partnerOf || '', childOf: it.childOf || '', data: r, replaces: replaces ? fullName(replaces) : '', disabled: noParents,
           checked: !replaces && !noParents && base.sure !== 'unsicher' }, base));
       }
     }
@@ -899,10 +914,27 @@ document.addEventListener('click', e => {
   const box = b.closest('#fOut, #cOut'); if (!box) return;
   box.querySelectorAll('input[type=checkbox][data-i]').forEach(x => { if (!x.disabled && !(b.dataset.all === '1' && x.closest('.holds'))) x.checked = b.dataset.all === '1'; });
 });
-// „– noch nicht verbinden –“ blendet die Personen-Auswahl aus
+// „– noch nicht verbinden –“ blendet die Personen-Auswahl aus; geratener Nachname passt sich an
 document.addEventListener('change', e => {
-  if (e.target.classList && e.target.classList.contains('relsel')) {
-    const t = e.target.parentElement.querySelector('.tgtsel'); if (t) t.hidden = e.target.value === 'none';
+  const el = e.target; if (!el.classList) return;
+  if (el.classList.contains('relsel') || el.classList.contains('tgtsel')) {
+    const row = el.closest('.sug'), rs = row.querySelector('.relsel'), ts = row.querySelector('.tgtsel'), ni = row.querySelector('.nameinp');
+    if (ts) ts.hidden = rs.value === 'none';
+    if (ni && ni.dataset.guess === '1' && ts && !ts.hidden) {
+      // Ziel-Person ermitteln (vorhanden oder gerade gefunden)
+      let tLast = '', tBirth = '';
+      if (ts.value.startsWith('p:')) { const T = P(ts.value.slice(2)); if (T) { tLast = T.lastName; tBirth = T.birthName || T.lastName; } }
+      else { const o = [...document.querySelectorAll('input.nameinp')].find(x => (renderSugs.last || [])[+x.dataset.n] && (renderSugs.last || [])[+x.dataset.n].idx === +ts.value.slice(2));
+        if (o) { const r = parseSpoken(o.value.replace(/\bgeb\.\s*/g, 'geborene ')); tLast = r.lastName || ''; tBirth = r.birthName || r.lastName || ''; } }
+      const kind = (REL_BY[rs.value] || REL_BY.none)[2];
+      const newLast = kind === 'sibling' || kind === 'parent' ? tBirth : kind === 'child' ? tLast : '';
+      if (newLast) { const w = ni.value.replace(/\s+geb\..*$/, '').split(/\s+/); ni.value = (w.length > 1 ? w.slice(0, -1) : w).join(' ') + ' ' + newLast; }
+    }
+  }
+});
+document.addEventListener('input', e => {
+  if (e.target.classList && e.target.classList.contains('nameinp')) {
+    e.target.dataset.guess = '0'; const cb = e.target.closest('.sug').querySelector('input[type=checkbox]'); if (cb) cb.checked = true;
   }
 });
 const ROLE_LABEL = { father: 'Vater', mother: 'Mutter', spouse: 'Partner/in', child: 'Kind', sibling: 'Geschwister', other: 'andere/r Verwandte/r' };
@@ -918,6 +950,7 @@ function tgtOptions(sugs, self, sel) {
 }
 // Vorschläge als Liste zum Abhaken anzeigen
 function renderSugs(sugs) {
+  renderSugs.last = sugs;
   const nNew = sugs.filter(x => x.type === 'new').length, nLink = sugs.filter(x => x.type === 'link' && !x.holds).length, nOk = sugs.filter(x => x.holds).length, nField = sugs.filter(x => x.type === 'field').length;
   const summary = `<div class="research open" style="margin-bottom:8px">Erkannt: <b>${nNew + nLink + nOk} Name(n)</b> – ${nNew} neu, ${nLink} schon im Stammbaum (zum Verbinden), ${nOk} schon so verbunden${nField ? `, ${nField} Angabe(n)` : ''}.</div>`;
   return '<h3>Vorschläge – abhaken, was stimmt:</h3>' + summary + (sugs.length > 2 ? '<div class="two" style="margin-bottom:8px"><button type="button" class="btn" data-all="1">☑ Alle anhaken</button><button type="button" class="btn" data-all="0">☐ Keine</button></div>' : '') + sugs.map((s, i) => {
@@ -927,14 +960,15 @@ function renderSugs(sugs) {
       const d = s.type === 'link' ? P(s.person) : s.data;
       roleSel = `<select class="relsel" data-rel="${i}">${REL_CHOICES.map(r => `<option value="${r[0]}"${r[0] === s.rel ? ' selected' : ''}>${r[1]}</option>`).join('')}</select>
         <select class="tgtsel" data-tgt="${i}"${s.rel === 'none' ? ' hidden' : ''}>${tgtOptions(sugs, i, s.tgt)}</select>`;
-      txt = `${s.holds ? '✓ Schon so im Stammbaum:' : s.type === 'link' ? '🔗 Schon im Stammbaum, verbinden:' : '✚ Neue Person:'} <b>${esc([d.firstName, d.lastName].filter(Boolean).join(' '))}</b>${d.birthName ? ' geb. ' + esc(d.birthName) : ''} ${esc(lifeSpan(d))}${d.birthPlace ? ', ' + esc(d.birthPlace) : ''}`
+      const nm = [d.firstName, d.lastName].filter(Boolean).join(' ') + (d.birthName ? ' geb. ' + d.birthName : '');
+      txt = `${s.holds ? '✓ Schon so im Stammbaum:' : s.type === 'link' ? '🔗 Schon im Stammbaum, verbinden:' : '✚ Neue Person:'} ${s.type === 'new' ? `<input class="nameinp" data-n="${i}" data-guess="${s.guessedLast ? 1 : 0}" value="${esc(nm)}" aria-label="Name">` + (s.guessedLast ? '<small class="warn"> Nachname nur geraten – bitte prüfen</small>' : '') : '<b>' + esc(nm) + '</b>'} ${esc(lifeSpan(d))}${d.birthPlace ? ', ' + esc(d.birthPlace) : ''}`
         + (s.relLabel ? ` <span class="hint">(laut Text: ${esc(s.relLabel)})</span>` : '')
 
         + (s.replaces ? ` <span class="warn">(ersetzt bisherige/n: ${esc(s.replaces)})</span>` : '')
 
     }
-    return `<div class="sug${s.holds ? ' holds' : ''}"><label class="sugl"><input type="checkbox" data-i="${i}"${s.checked ? ' checked' : ''}${s.disabled ? ' disabled' : ''}>
-      <span>${txt}</span></label>${s.type === 'new' || s.type === 'link' ? `<div class="sugrole">ist ${roleSel}</div>` : ''}
+    return `<div class="sug${s.holds ? ' holds' : ''}"><div class="sugl"><input type="checkbox" data-i="${i}"${s.checked ? ' checked' : ''}${s.disabled ? ' disabled' : ''}>
+      <span>${txt}</span></div>${s.type === 'new' || s.type === 'link' ? `<div class="sugrole">ist ${roleSel}</div>` : ''}
       <div class="sugsrc"><small class="sure-${s.sure}">${s.sure}</small>${s.source ? ' <small>· ' + linkify(s.source) + '</small>' : ''}</div></div>`;
   }).join('');
 }
@@ -943,6 +977,7 @@ function rememberSugs(box, sugs) {
   const m = new Map();
   box.querySelectorAll('input[type=checkbox][data-i]').forEach(x => { const s = sugs[+x.dataset.i]; if (s) m.set(sugKey(s), { checked: x.checked }); });
   box.querySelectorAll('select.relsel').forEach(x => { const s = sugs[+x.dataset.rel]; if (s && m.has(sugKey(s))) m.get(sugKey(s)).rel = x.value; });
+  box.querySelectorAll('input.nameinp').forEach(x => { const s = sugs[+x.dataset.n]; if (s && m.has(sugKey(s))) m.get(sugKey(s)).name = x.value; });
   box.querySelectorAll('select.tgtsel').forEach(x => { const s = sugs[+x.dataset.tgt]; if (s && m.has(sugKey(s))) m.get(sugKey(s)).tgtName = x.options[x.selectedIndex] ? x.options[x.selectedIndex].text : ''; });
   return m;
 }
@@ -950,6 +985,7 @@ function restoreSugs(sugs, m) {
   sugs.forEach(s => {
     const o = m.get(sugKey(s)); if (!o) return;
     s.checked = o.checked; if (o.rel) s.rel = o.rel;
+    if (o.name) { const r = parseSpoken(o.name.replace(/\bgeb\.\s*/g, 'geborene ')); s.data = Object.assign({}, s.data, { firstName: r.firstName || '', lastName: r.lastName || '', birthName: r.birthName || '' }); s.guessedLast = false; }
     if (o.tgtName) {   // gewählte Person über den Namen wiederfinden (Nummern ändern sich beim Neuaufbau)
       const nm = o.tgtName.replace(/^✚\s*/, '').replace(/\s*\(.*\)$/, '');
       const j = sugs.findIndex(x => x.type === 'new' && [x.data.firstName, x.data.lastName].filter(Boolean).join(' ') === nm);
@@ -959,8 +995,20 @@ function restoreSugs(sugs, m) {
   });
 }
 function collectChosen(box, sugs) {
+  box.querySelectorAll('input.nameinp').forEach(x => {
+    const sg = sugs[+x.dataset.n], r = parseSpoken(x.value.replace(/\bgeb\.\s*/g, 'geborene '));
+    if (sg && (r.firstName || r.lastName)) sg.data = Object.assign({}, sg.data, { firstName: r.firstName || '', lastName: r.lastName || '', birthName: r.birthName || '' });
+  });
   box.querySelectorAll('select.relsel').forEach(x => { sugs[+x.dataset.rel].rel = x.value; });
   box.querySelectorAll('select.tgtsel').forEach(x => { sugs[+x.dataset.tgt].tgt = x.value; });
+  // Geratene Nachnamen von Partnern/Kindern neu gefundener Personen an deren (evtl. korrigierten) Nachnamen anpassen
+  box.querySelectorAll('input.nameinp[data-guess="1"]').forEach(x => {
+    const sg = sugs[+x.dataset.n]; if (!sg) return;
+    const kind = (REL_BY[sg.rel] || REL_BY.none)[2], t = String(sg.tgt || '');
+    if (kind !== 'spouse' && kind !== 'child') return;
+    const T = t.startsWith('n:') ? (sugs.find(o => o.idx === +t.slice(2)) || {}).data : P(t.slice(2));
+    if (T && T.lastName) sg.data = Object.assign({}, sg.data, { lastName: T.lastName });
+  });
   return [...box.querySelectorAll('input[type=checkbox]:checked')].map(x => sugs[+x.dataset.i]);
 }
 // Abgehakte Vorschläge übernehmen (Felder setzen, neue Verwandte anlegen und verknüpfen, Quellen notieren)
@@ -1356,9 +1404,10 @@ function obituaryNames(raw, p) {
     if (lineNo === 0 && names.length === 1 && !lineRel && !hint) names[0].rel = ['EHEPARTNER', ''];
     lineNo++;
     const withLast = x => (x && x.split(/\s+/).length === 1) ? x + ' ' + (lastFull || fam) : x;
+    const lineHasLast = !!lastFull;
     names.forEach(({ n, rel, partnerOf, childOf }) => {
       const r = rel || def, po = withLast(partnerOf), co = withLast(childOf);
-      out.push({ key: r[0], value: withLast(n).replace(/\bgeb\.\s*/g, 'geborene '), sure: 'unsicher',
+      out.push({ key: r[0], value: withLast(n).replace(/\bgeb\.\s*/g, 'geborene '), sure: 'unsicher', guessedLast: n.split(/\s+/).length === 1 && !lineHasLast,
         relLabel: po ? 'Partner/in von ' + po.replace(/\s+geborene.*$/, '') : co ? 'Enkel/in – Kind von ' + co.replace(/\s+geborene.*$/, '') : r[1],
         partnerOf: po, childOf: co });
     });
@@ -1402,13 +1451,14 @@ function extractRelatives(text, p) {
     if (!name) return;
     let v = name.replace(/\bgeb\.\s*/g, 'geborene ');
     const words = v.replace(/\s+\d{4}.*$/, '').replace(/\s+geborene.*$/, '').split(/\s+/);
-    if (words.length === 1) {   // nur Vorname → Familienname ergänzen
+    let guessed = false;
+    if (words.length === 1) {   // nur Vorname → Familienname ergänzen (geraten)
       const ln = key === 'EHEPARTNER' || key === 'KIND' ? (p.lastName || fam) : fam;
-      if (ln) v = v.replace(words[0], words[0] + ' ' + ln);
+      if (ln) { v = v.replace(words[0], words[0] + ' ' + ln); guessed = true; }
     }
     const r = parseSpoken(v);
     if (sameName(p, r) && (!r.birthDate || r.birthDate === p.birthDate)) return;   // das ist die Person selbst
-    if (!items.some(x => x.key === key && x.value === v)) items.push({ key, value: v, sure });
+    if (!items.some(x => x.key === key && x.value === v)) items.push({ key, value: v, sure, guessedLast: guessed });
   };
   let m;
   // Eltern: „Sohn/Tochter des Johann Weber und der Maria geb. Schmidt“

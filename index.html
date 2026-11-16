@@ -308,18 +308,12 @@ function renderTree(fit) {
   if (!P(f.mother)) { ghosts.push({ x: slotX(1, 1), y: -rowH, add: 'mother', label: '＋ Mutter' }); ghostLine(slotX(1, 1)); }
 
   // --- Geschwister (links daneben, mit den Eltern verbunden) ---
-  const hasParents = !!(P(f.father) || P(f.mother));
   const sibs = siblingsOf(f);
   const parentY = -CH / 2 - VG / 2;
   sibs.slice().reverse().forEach((s, k) => {
     const x = -(k + 1) * step; nodes.push({ id: s.id, x, y: 0 });
     lines.push(`M${x},${-CH / 2}V${parentY}H0`);
   });
-  if (hasParents) {
-    const gx = -(sibs.length + 1) * step;
-    ghosts.push({ x: gx, y: 0, add: 'sibling', label: '＋ Geschwister' });
-    lines.push(`M${gx},${-CH / 2}V${parentY}H0`);
-  }
 
   // --- Partner (rechts daneben) ---
   const spouses = (f.spouses || []).filter(id => P(id));

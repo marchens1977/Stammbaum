@@ -132,6 +132,7 @@
   .partner-row { display: flex; align-items: center; justify-content: space-between; background: #f3ead4; border-radius: 10px; padding: 6px 10px; margin-bottom: 6px; }
   .partner-row button { background: none; border: none; color: #a33; font-size: 1.1rem; }
   [hidden] { display: none !important; }
+  h3 .mini { font: .8rem system-ui, sans-serif; background: none; border: 1px solid #d0bf96; border-radius: 8px; padding: 2px 8px; color: var(--green); margin-left: 6px; vertical-align: middle; }
   .snip { background: #fff; border: 1px solid #d8c9a3; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; font-size: .88rem; cursor: pointer; }
   .snip.on { border: 2px solid var(--green); background: #eef5ea; }
   .phototip { font-size: .88rem; margin-top: 8px; } .phototip summary { color: var(--green); font-weight: 600; cursor: pointer; } .phototip ol { margin: 6px 0; padding-left: 20px; }
@@ -223,7 +224,33 @@ function load() {
   try { const d = JSON.parse(localStorage.getItem(STORE_KEY)); if (d && d.persons) return d; } catch (e) {}
   return emptyData();
 }
+// Nur Notizen und Quellen bearbeiten (schnell, ohne das ganze Formular)
+function editNotes(id) {
+  const p = P(id); if (!p) return;
+  const dlg = openModal(`<h2>✏️ Notizen &amp; Quellen: ${esc(fullName(p))}</h2>
+    <p class="hint">Hier kannst du alles ändern oder löschen. Doppelte Einträge entfernt die App beim Speichern automatisch.</p>
+    <label>Notizen</label><textarea id="nNotes" style="min-height:180px">${esc(p.notes)}</textarea>
+    <label>Quellen (eine pro Zeile)</label><textarea id="nSrc" style="min-height:120px">${esc(p.sources)}</textarea>
+    <div class="actions"><button class="btn" id="cancel">Abbrechen</button><button class="btn primary" id="ok">💾 Speichern</button></div>`);
+  dlg.querySelector('#cancel').onclick = () => { closeModal(); openDetail(id); };
+  dlg.querySelector('#ok').onclick = () => {
+    p.notes = dlg.querySelector('#nNotes').value.trim(); p.sources = dlg.querySelector('#nSrc').value.trim();
+    save(); closeModal(); refresh(); openDetail(id);
+  };
+}
+// Doppelte Einträge in Notizen (Absätze) und Quellen (Zeilen) entfernen
+function noteKey(par) { return par.replace(/^\[[^\]]*\]\s*/, '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+function dedupeNotes(t) {
+  const seen = new Set();
+  return String(t || '').split(/\n\s*\n/).filter(par => { const k = noteKey(par); if (!k || seen.has(k)) return false; seen.add(k); return true; }).join('\n\n');
+}
+function dedupeLines(t) {
+  const seen = new Set();
+  return String(t || '').split('\n').filter(l => { const k = l.trim().toLowerCase(); if (!k || seen.has(k)) return false; seen.add(k); return true; }).join('\n');
+}
+function hasNote(p, text) { const k = noteKey(text); return !!k && String(p.notes || '').split(/\n\s*\n/).some(par => noteKey(par) === k); }
 function save() {
+  Object.values(data.persons).forEach(q => { q.notes = dedupeNotes(q.notes); q.sources = dedupeLines(q.sources); });
   try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); }
   catch (e) { alert('Speichern hat nicht geklappt – der Speicher ist voll. Bitte einige Fotos entfernen und eine Sicherung machen.'); }
 }
@@ -508,8 +535,8 @@ function openDetail(id) {
     ${spouses.length ? '<h3>Partner/in</h3>' + chips(spouses) : ''}
     ${kids.length ? '<h3>Kinder</h3>' + chips(kids) : ''}
     ${sibs.length ? '<h3>Geschwister</h3>' + chips(sibs) : ''}
-    ${p.notes ? '<h3>Notizen</h3><div class="note">' + linkify(p.notes) + '</div>' : ''}
-    ${p.sources ? '<h3>Quellen</h3><div class="note">' + linkify(p.sources) + '</div>' : ''}
+    ${p.notes ? '<h3>Notizen <button class="mini" data-act="editnotes">✏️ bearbeiten</button></h3><div class="note">' + linkify(p.notes) + '</div>' : ''}
+    ${p.sources ? '<h3>Quellen <button class="mini" data-act="editnotes">✏️ bearbeiten</button></h3><div class="note">' + linkify(p.sources) + '</div>' : ''}
     ${prot
       ? `<div class="research locked">🔒 <b>Geschützt.</b> Diese Person lebt (oder es ist unklar). Deshalb gibt es hier keine KI-Recherche und keine Ahnenforschungs-Seiten – nur eine normale Google-Suche.
           <a class="btn google-btn" href="${esc(googleUrl(p))}" target="_blank" rel="noopener">🔎 Bei Google suchen</a>
@@ -764,7 +791,10 @@ function applySuggestions(p, chosen) {
       data.persons[np.id] = np; link(p.id, s.role, np.id);
     }
   });
-  groups.forEach(({ q, what, s }) => { q.sources = (q.sources ? q.sources + '\n' : '') + `${what.join(', ')}: ${s.source} (${s.sure})`; });
+  groups.forEach(({ q, what, s }) => {
+    const line = `${what.join(', ')}: ${s.source} (${s.sure})`;
+    if (!String(q.sources || '').includes(line)) q.sources = (q.sources ? q.sources + '\n' : '') + line;
+  });
 }
 function importClaude(id) {
   const p = P(id); if (!p) return;
@@ -876,13 +906,29 @@ async function wikiItems(url) {
 // Der Browser darf fremde Seiten nicht selbst lesen. Deshalb holt ein öffentlicher Lese-Dienst (Jina Reader)
 // den reinen Text. Dorthin geht NUR der Link – keine Daten aus dem Stammbaum.
 const READER = 'https://r.jina.ai/';
+async function fetchTimeout(url, opts = {}, ms = 25000) {
+  const c = new AbortController(); const t = setTimeout(() => c.abort(), ms);
+  try { return await fetch(url, Object.assign({ signal: c.signal }, opts)); } finally { clearTimeout(t); }
+}
 async function readPage(url) {
-  const r = await fetch(READER + url, { headers: { Accept: 'text/plain' } });
-  if (!r.ok) throw new Error('read ' + r.status);
-  let t = await r.text();
-  t = t.replace(/^[\s\S]*?Markdown Content:\s*/, '')
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/\*\*/g, ' ').replace(/[#>|_]+/g, ' ').replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim();
+  let t = '';
+  try {   // 1. Versuch: Jina Reader (kann auch PDFs)
+    const r = await fetchTimeout(READER + url, { headers: { Accept: 'text/plain' } });
+    if (!r.ok) throw new Error('read ' + r.status);
+    t = await r.text();
+    t = t.replace(/^[\s\S]*?Markdown Content:\s*/, '')
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/\*\*/g, ' ').replace(/[#>|_]+/g, ' ');
+  } catch (e) {   // 2. Versuch: Seite als HTML holen und Text herauslösen
+    const r = await fetchTimeout('https://api.allorigins.win/raw?url=' + encodeURIComponent(url));
+    if (!r.ok) throw new Error('read2 ' + r.status);
+    const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+    doc.querySelectorAll('script,style,noscript,nav,header,footer').forEach(x => x.remove());
+    doc.querySelectorAll('br,p,div,li,h1,h2,h3,h4,tr').forEach(x => x.append('\n'));
+    t = doc.body ? doc.body.textContent : '';
+  }
+  t = t.replace(/[ \t\u00a0]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim();
+  if (t.length < 30) throw new Error('leer');
   return t;
 }
 // Stellen im Text finden, an denen die Person vorkommt (Nachname/Geburtsname, möglichst mit Vorname und Daten)
@@ -976,7 +1022,12 @@ function addFinding(id, pre = {}) {
     out.innerHTML = other + (sugs.length ? renderSugs(sugs)
       : '<div class="research open">Ich habe keine neuen Daten erkannt. Der Text wird trotzdem als Notiz gespeichert.' + (prot ? '' : ' Bei längeren Texten hilft „Von Claude prüfen lassen“.') + '</div>');
   };
-  dlg.querySelector('#fParse').onclick = () => { wiki = null; parse(); };
+  dlg.querySelector('#fParse').onclick = () => {
+    wiki = null;
+    if (!T()) { dlg.querySelector('#fOut').innerHTML = '<div class="research locked">Im Feld „Gefundener Text“ steht noch nichts. Bitte Text einfügen – oder bei einem Link „🌐 Seite / PDF auslesen“ antippen.</div>'; }
+    else parse();
+    dlg.querySelector('#fOut').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   // Wikipedia-Link erkannt → Daten direkt abrufen
   const wBtn = dlg.querySelector('#fWiki'), wMsg = dlg.querySelector('#fWikiMsg');
   const loadWiki = async () => {
@@ -991,7 +1042,8 @@ function addFinding(id, pre = {}) {
   const isUrl = u => /^https?:\/\//i.test(u);
   const useSnippet = t => { dlg.querySelector('#fText').value = t.replace(/^… | …$/g, ''); wiki = null; parse(); };
   const readUrl = async () => {
-    snipBox.innerHTML = '<div class="hint">⏳ Lese die Seite … (kann bei PDFs etwas dauern)</div>';
+    snipBox.innerHTML = '<div class="research open">⏳ Lese die Seite … (kann bei PDFs bis zu 30 Sekunden dauern)</div>';
+    rBtn.disabled = true; snipBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
     try {
       const text = await readPage(SRC());
       const sn = findSnippets(p, text);
@@ -1005,11 +1057,13 @@ function addFinding(id, pre = {}) {
         snipBox.querySelectorAll('.snip').forEach(x => x.classList.toggle('on', x === d)); useSnippet(sn[+d.dataset.s].text);
       });
       snipBox.querySelector('.snip').classList.add('on'); useSnippet(sn[0].text);
+      const o = dlg.querySelector('#fOut'); (o.querySelector('label.sug') ? o : snipBox).scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
+      console.warn('read', e);
       snipBox.innerHTML = '<div class="research locked">Die Seite konnte nicht gelesen werden (manche Seiten sperren das oder brauchen eine Anmeldung). Dann bitte den Text markieren und kopieren/teilen.' + (prot ? '' : ' Oder „🤖 Lieber von Claude prüfen lassen“.') + '</div>';
     }
   };
-  rBtn.onclick = readUrl;
+  rBtn.onclick = async () => { await readUrl(); rBtn.disabled = false; };
   const checkWiki = () => { wBtn.hidden = !wikiFromUrl(SRC()); rBtn.hidden = !isUrl(SRC()) || !!wikiFromUrl(SRC()); };
   dlg.querySelector('#fSrc').addEventListener('input', checkWiki);
   wBtn.onclick = loadWiki;
@@ -1032,14 +1086,17 @@ function addFinding(id, pre = {}) {
     const chosen = [...dlg.querySelectorAll('#fOut input:checked')].map(x => sugs[+x.dataset.i]);
     applySuggestions(p, chosen);
     const date = new Date().toLocaleDateString('de-DE');
-    if (t) p.notes = (p.notes ? p.notes + '\n\n' : '') + `[Fund ${date}, ${sure}] ${t.length > 800 ? t.slice(0, 800) + ' …' : t}`;
-    if (s && !chosen.some(c => c.source)) p.sources = (p.sources ? p.sources + '\n' : '') + s;
+    const short = t.length > 800 ? t.slice(0, 800) + ' …' : t;
+    // Nur der Seitentitel (z. B. „Max Muster – Wikipedia“) ist keine Notiz wert
+    const titleOnly = /^https?:/i.test(s) && (t === (pre.title || '').trim() || (!/\d/.test(t) && t.length < 120));
+    if (t && !titleOnly && !hasNote(p, short)) p.notes = (p.notes ? p.notes + '\n\n' : '') + `[Fund ${date}, ${sure}] ${short}`;
+    if (s && !String(p.sources || '').includes(s)) p.sources = (p.sources ? p.sources + '\n' : '') + s;
     save(); closeModal(); refresh(); openDetail(id);
   };
   // Geteilte Seite ohne markierten Text → automatisch auslesen
   const onlyTitle = !pre.text || pre.text.length < 80;
   if (wikiFromUrl(SRC())) loadWiki();
-  else if (isUrl(SRC()) && pre.url && onlyTitle) readUrl();
+  else if (isUrl(SRC()) && pre.url && onlyTitle) readUrl().then(() => rBtn.disabled = false);
   else if (preText) parse();
 }
 
@@ -1083,6 +1140,7 @@ sheet.addEventListener('click', e => {
   const id = sheetId, act = a.dataset.act;
   if (act === 'close') closeSheet();
   else if (act === 'edit') personForm(id);
+  else if (act === 'editnotes') editNotes(id);
   else if (act === 'focus') { data.focusId = id; save(); closeSheet(); showTree(); renderTree(true); }
   else if (act === 'root') { data.rootId = id; save(); openDetail(id); }
   else if (act === 'delete') deletePerson(id);
@@ -1864,6 +1922,7 @@ function loadDemo() {
 }
 
 // ====================== Start ======================
+if (Object.keys(data.persons).length) save();   // räumt dabei auch alte doppelte Notizen/Quellen auf
 renderTree(true);
 checkShared();
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});

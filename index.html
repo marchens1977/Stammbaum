@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#3e5c3a">
+<title>Unser Stammbaum</title>
+<style>
+  :root {
+    --bg: #f4ecd8; --paper: #fffaf0; --ink: #3b2f22; --muted: #7a6a55;
+    --green: #3e5c3a; --green2: #56794f; --gold: #c99a2e;
+    --m-bg: #dde9f5; --m-bd: #4a78a8;
+    --w-bg: #f8e1e6; --w-bd: #b45a72;
+    --u-bg: #eee7d6; --u-bd: #8a7a5a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { display: flex; flex-direction: column; overflow: hidden; }
+  button { font: inherit; cursor: pointer; }
+
+  header { background: var(--green); color: #fff; display: flex; align-items: center;
+    gap: 6px; padding: 8px 10px; padding-top: max(8px, env(safe-area-inset-top)); }
+  header h1 { font-family: Georgia, serif; font-size: 1.25rem; margin: 0 auto 0 4px; font-weight: normal; }
+  header button { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.25);
+    border-radius: 10px; padding: 8px 11px; font-size: .95rem; }
+  header button.active { background: #fff; color: var(--green); }
+  @media (max-width: 480px) {
+    header h1 { font-size: 1.05rem; } header h1 .long { display: none; }
+    header button { padding: 7px 9px; font-size: .9rem; }
+  }
+
+  main { flex: 1; position: relative; overflow: hidden; }
+  #treeView, #listView { position: absolute; inset: 0; }
+  #tree { width: 100%; height: 100%; touch-action: none; display: block;
+    background: radial-gradient(circle at 50% 40%, #fbf5e6 0%, var(--bg) 70%); }
+
+  .card rect.box { stroke-width: 2; filter: drop-shadow(0 2px 3px rgba(60,40,20,.18)); }
+  .card.g-m rect.box { fill: var(--m-bg); stroke: var(--m-bd); }
+  .card.g-w rect.box { fill: var(--w-bg); stroke: var(--w-bd); }
+  .card.g-u rect.box, .card.g-d rect.box { fill: var(--u-bg); stroke: var(--u-bd); }
+  .card.focus rect.box { stroke: var(--gold); stroke-width: 4; }
+  .card text { fill: var(--ink); pointer-events: none; }
+  .t-first { font: 600 15px Georgia, serif; }
+  .t-last { font: 14px Georgia, serif; }
+  .t-life { font: 12px system-ui, sans-serif; fill: var(--muted) !important; }
+  .t-lock { font-size: 12px; }
+  .ghost rect { fill: rgba(255,255,255,.45); stroke: var(--muted); stroke-dasharray: 6 5; stroke-width: 1.5; }
+  .ghost text { fill: var(--muted); font: 14px system-ui, sans-serif; pointer-events: none; }
+  .line { fill: none; stroke: #8b7355; stroke-width: 2; }
+  .marry { font: 16px Georgia, serif; fill: var(--gold); }
+
+  .zoom { position: absolute; left: 10px; bottom: calc(14px + env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 6px; }
+  .zoom button { width: 44px; height: 44px; border-radius: 50%; border: 1px solid #c8b895;
+    background: var(--paper); font-size: 1.3rem; color: var(--green); box-shadow: 0 2px 4px rgba(0,0,0,.12); }
+
+  #fab { position: absolute; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom));
+    background: var(--green); color: #fff; border: none; border-radius: 28px; padding: 14px 20px;
+    font-size: 1.05rem; box-shadow: 0 3px 8px rgba(0,0,0,.25); }
+
+  #emptyHint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  #emptyHint .box { background: var(--paper); border-radius: 16px; padding: 24px; max-width: 420px;
+    text-align: center; box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+  #emptyHint h2 { font-family: Georgia, serif; margin-top: 0; }
+
+  #listView { overflow-y: auto; padding: 12px; padding-bottom: 90px; }
+  #search { width: 100%; padding: 12px; font-size: 1rem; border-radius: 12px; border: 1px solid #c8b895; background: var(--paper); }
+  .count { color: var(--muted); margin: 8px 4px; font-size: .9rem; }
+  .row { display: flex; align-items: center; gap: 12px; background: var(--paper); border-radius: 12px;
+    padding: 10px 12px; margin-bottom: 8px; border-left: 5px solid var(--u-bd); cursor: pointer; }
+  .row.g-m { border-left-color: var(--m-bd); } .row.g-w { border-left-color: var(--w-bd); }
+  .row .nm { font-family: Georgia, serif; font-size: 1.05rem; }
+  .row .sub { color: var(--muted); font-size: .85rem; }
+  .avatar { width: 46px; height: 46px; border-radius: 50%; flex: none; object-fit: cover;
+    display: flex; align-items: center; justify-content: center; font-family: Georgia, serif;
+    font-size: 1.2rem; color: #fff; background: var(--u-bd); }
+  .avatar.g-m { background: var(--m-bd); } .avatar.g-w { background: var(--w-bd); }
+
+  /* Detail-Ansicht */
+  #sheet { position: fixed; left: 0; right: 0; bottom: 0; max-height: 78vh; background: var(--paper);
+    border-radius: 18px 18px 0 0; box-shadow: 0 -4px 20px rgba(0,0,0,.22); overflow-y: auto;
+    z-index: 20; padding: 0 16px calc(20px + env(safe-area-inset-bottom)); }
+  @media (min-width: 900px) {
+    #sheet { left: auto; top: 60px; width: 400px; max-height: none; border-radius: 18px 0 0 0; }
+  }
+  .sheet-head { position: sticky; top: 0; background: var(--paper); display: flex; gap: 12px;
+    align-items: center; padding: 16px 0 10px; border-bottom: 1px solid #eadfc4; }
+  .sheet-head .avatar { width: 64px; height: 64px; font-size: 1.6rem; }
+  .sheet-head h2 { font-family: Georgia, serif; margin: 0; font-size: 1.3rem; }
+  .sheet-head .sub { color: var(--muted); font-size: .9rem; }
+  .close { margin-left: auto; align-self: flex-start; background: none; border: none; font-size: 1.6rem; color: var(--muted); padding: 4px 8px; }
+  h3 { font-family: Georgia, serif; font-size: 1rem; color: var(--green); margin: 16px 0 6px; }
+  .facts { width: 100%; border-collapse: collapse; }
+  .facts td { padding: 4px 0; vertical-align: top; }
+  .facts td:first-child { color: var(--muted); width: 90px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { background: #efe6cf; border: 1px solid #d8c9a3; border-radius: 16px; padding: 6px 12px; font-size: .92rem; color: var(--ink); }
+  .chip.g-m { background: var(--m-bg); border-color: #a9c1dc; } .chip.g-w { background: var(--w-bg); border-color: #e0b1bf; }
+  .note { white-space: pre-wrap; background: #f8f1df; border-radius: 10px; padding: 10px; }
+  .note a { color: var(--green); word-break: break-all; }
+  .research { border-radius: 12px; padding: 12px; margin-top: 14px; font-size: .92rem; }
+  .research.locked { background: #f3e3e0; border: 1px solid #dcb3ab; }
+  .research.open { background: #e5efe0; border: 1px solid #b2c9a7; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
+  .btn { background: #efe6cf; border: 1px solid #d0bf96; border-radius: 12px; padding: 11px 10px; color: var(--ink); font-size: .95rem; }
+  .btn.primary { background: var(--green); color: #fff; border-color: var(--green); }
+  .btn.danger { background: #fff; color: #a33; border-color: #d9a3a3; }
+  .btn.wide { grid-column: 1 / -1; }
+
+  /* Fenster für Formulare */
+  #modal { position: fixed; inset: 0; background: rgba(40,30,20,.45); z-index: 30; display: flex;
+    align-items: flex-end; justify-content: center; }
+  @media (min-width: 700px) { #modal { align-items: center; } }
+  .dialog { background: var(--paper); width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto;
+    border-radius: 18px 18px 0 0; padding: 18px 16px calc(20px + env(safe-area-inset-bottom)); }
+  @media (min-width: 700px) { .dialog { border-radius: 18px; } }
+  .dialog h2 { font-family: Georgia, serif; margin: 0 0 12px; }
+  .dialog label { display: block; font-size: .85rem; color: var(--muted); margin: 10px 0 4px; }
+  .dialog input, .dialog select, .dialog textarea { width: 100%; padding: 11px; font-size: 1rem;
+    border-radius: 10px; border: 1px solid #c8b895; background: #fff; color: var(--ink); font-family: inherit; }
+  .dialog textarea { min-height: 80px; resize: vertical; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .hint { font-size: .82rem; color: var(--muted); margin-top: 4px; }
+  .menu-list { display: flex; flex-direction: column; gap: 8px; }
+  .menu-list .btn { text-align: left; padding: 14px; }
+  .privacy { background: #e5efe0; border-radius: 12px; padding: 12px; font-size: .9rem; margin-bottom: 14px; }
+  .partner-row { display: flex; align-items: center; justify-content: space-between; background: #f3ead4; border-radius: 10px; padding: 6px 10px; margin-bottom: 6px; }
+  .partner-row button { background: none; border: none; color: #a33; font-size: 1.1rem; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌳 <span class="long">Unser </span>Stammbaum</h1>
+  <button id="btnTree" class="active">Baum</button>
+  <button id="btnList">Liste</button>
+  <button id="btnHome" title="Zur Startperson">🏠</button>
+  <button id="btnMenu" title="Menü">☰</button>
+</header>
+<main>
+  <section id="treeView">
+    <svg id="tree"><g id="viewport"></g></svg>
+    <div class="zoom">
+      <button id="zoomIn" aria-label="Vergrößern">＋</button>
+      <button id="zoomOut" aria-label="Verkleinern">－</button>
+      <button id="zoomFit" aria-label="Einpassen">⤢</button>
+    </div>
+    <div id="emptyHint" hidden>
+      <div class="box">
+        <h2>Willkommen! 👋</h2>
+        <p>Hier entsteht euer Familien-Stammbaum. Fang mit einer Person an – zum Beispiel mit dir selbst oder einem Großelternteil.</p>
+        <p><button class="btn primary" id="btnFirst">＋ Erste Person anlegen</button></p>
+        <p><button class="btn" id="btnDemo">👪 Beispiel-Familie ansehen</button></p>
+        <p class="hint">Alle Daten bleiben nur auf diesem Gerät.</p>
+      </div>
+    </div>
+  </section>
+  <section id="listView" hidden>
+    <input id="search" type="search" placeholder="🔍 Name, Ort oder Jahr suchen …">
+    <div class="count" id="count"></div>
+    <div id="list"></div>
+  </section>
+  <button id="fab">＋ Person</button>
+</main>
+<div id="sheet" hidden></div>
+<div id="modal" hidden></div>
+<input type="file" id="fileInput" hidden>
+
+<script>
+'use strict';
+// ====================== Einstellungen ======================
+const CW = 170, CH = 84;          // Größe einer Personen-Karte
+const HG = 28, VG = 66;           // Abstand waagerecht / senkrecht
+const MAX_ANCESTOR_GENS = 3;      // wie viele Generationen nach oben (Eltern, Großeltern, Urgroßeltern)
+const MAX_DESC_GENS = 2;          // wie viele Generationen nach unten (Kinder, Enkel)
+const PROTECT_YEARS = 100;        // jünger als so viele Jahre = geschützt
+const STORE_KEY = 'stammbaum-daten-v1';
+const THIS_YEAR = new Date().getFullYear();
+
+// ====================== Daten ======================
+let data = load();
+function emptyData() { return { version: 1, persons: {}, rootId: null, focusId: null }; }
+function load() {
+  try { const d = JSON.parse(localStorage.getItem(STORE_KEY)); if (d && d.persons) return d; } catch (e) {}
+  return emptyData();
+}
+function save() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); }
+  catch (e) { alert('Speichern hat nicht geklappt – der Speicher ist voll. Bitte einige Fotos entfernen und eine Sicherung machen.'); }
+}
+function uid() { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+const P = id => (id ? data.persons[id] : undefined);
+function newPerson(o = {}) {
+  return Object.assign({ id: uid(), firstName: '', lastName: '', birthName: '', gender: 'u', status: 'unbekannt',
+    birthDate: '', birthPlace: '', deathDate: '', deathPlace: '', occupation: '', notes: '', sources: '',
+    photo: '', father: null, mother: null, spouses: [] }, o);
+}
+
+// ====================== Hilfsfunktionen ======================
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function yearOf(s) { const m = String(s || '').match(/\b(\d{4})\b/); return m ? +m[1] : null; }
+function fullName(p) { return [p.firstName, p.lastName].filter(Boolean).join(' ') || 'Unbekannt'; }
+function trunc(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+function lifeSpan(p) {
+  const b = yearOf(p.birthDate), d = yearOf(p.deathDate); const parts = [];
+  if (b) parts.push('* ' + b);
+  if (d) parts.push('† ' + d); else if (p.status === 'verstorben') parts.push('†');
+  return parts.join('   ');
+}
+function byBirth(a, b) { return (yearOf(a.birthDate) || 9999) - (yearOf(b.birthDate) || 9999); }
+function childrenOf(id) { return Object.values(data.persons).filter(c => c.father === id || c.mother === id).sort(byBirth); }
+function siblingsOf(p) {
+  if (!p.father && !p.mother) return [];
+  return Object.values(data.persons).filter(s => s.id !== p.id &&
+    ((p.father && s.father === p.father) || (p.mother && s.mother === p.mother))).sort(byBirth);
+}
+function sortedPersons() {
+  return Object.values(data.persons).sort((a, b) =>
+    (a.lastName + ' ' + a.firstName).localeCompare(b.lastName + ' ' + b.firstName, 'de'));
+}
+// Schutz: Lebende und alle, die jünger als 100 Jahre sind (oder bei denen es unklar ist)
+function isProtected(p) {
+  const by = yearOf(p.birthDate), dy = yearOf(p.deathDate);
+  if (p.status === 'lebt') return true;
+  if (by) return by > THIS_YEAR - PROTECT_YEARS;
+  if (dy && dy <= THIS_YEAR - 30) return false;
+  return true;
+}
+function linkify(text) {
+  return esc(text).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+}
+function avatarHTML(p) {
+  if (p.photo) return `<img class="avatar" src="${esc(p.photo)}" alt="">`;
+  return `<div class="avatar g-${p.gender}">${esc((p.firstName || p.lastName || '?')[0].toUpperCase())}</div>`;
+}
+
+// ====================== Baum zeichnen ======================
+const svg = document.getElementById('tree');
+const vp = document.getElementById('viewport');
+let view = { x: 0, y: 0, k: 1 };
+let lastBox = null;
+
+function applyView() { vp.setAttribute('transform', `translate(${view.x},${view.y}) scale(${view.k})`); }
+
+function renderTree(fit) {
+  const ids = Object.keys(data.persons);
+  document.getElementById('emptyHint').hidden = ids.length > 0;
+  document.getElementById('fab').hidden = ids.length === 0;
+  if (!ids.length) { vp.innerHTML = ''; return; }
+  if (!P(data.focusId)) data.focusId = P(data.rootId) ? data.rootId : ids[0];
+  if (!P(data.rootId)) data.rootId = data.focusId;
+
+  const f = P(data.focusId);
+  const rowH = CH + VG, step = CW + HG;
+  const nodes = [], ghosts = [], lines = [], marks = [];
+
+  // --- Vorfahren (nach oben) ---
+  const anc = [[f.id]]; let maxG = 0;
+  for (let g = 1; g <= MAX_ANCESTOR_GENS; g++) {
+    const row = []; let any = false;
+    for (const cid of anc[g - 1]) {
+      const c = P(cid);
+      const fa = c && P(c.father) ? c.father : null, mo = c && P(c.mother) ? c.mother : null;
+      row.push(fa, mo); if (fa || mo) any = true;
+    }
+    if (!any) break;
+    anc.push(row); maxG = g;
+  }
+  const total = Math.pow(2, Math.max(maxG, 1)) * step;
+  const slotX = (g, i) => (i + 0.5) * (total / Math.pow(2, g)) - total / 2;
+  const pos = {};
+  for (let g = 0; g <= maxG; g++) anc[g].forEach((id, i) => {
+    if (!id) return; const x = slotX(g, i), y = -g * rowH;
+    pos[g + ':' + i] = { x, y }; nodes.push({ id, x, y, focus: g === 0 });
+  });
+  for (let g = 1; g <= maxG; g++) for (let ci = 0; ci < anc[g - 1].length; ci++) {
+    const c = pos[(g - 1) + ':' + ci]; if (!c) continue;
+    const ps = [pos[g + ':' + (2 * ci)], pos[g + ':' + (2 * ci + 1)]].filter(Boolean); if (!ps.length) continue;
+    const midY = c.y - CH / 2 - VG / 2; const xs = ps.map(p => p.x).concat(c.x);
+    let d = `M${c.x},${c.y - CH / 2}V${midY}M${Math.min(...xs)},${midY}H${Math.max(...xs)}`;
+    ps.forEach(p => d += `M${p.x},${midY}V${p.y + CH / 2}`);
+    lines.push(d);
+  }
+  // Platzhalter für fehlende Eltern
+  const ghostLine = (x) => lines.push(`M0,${-CH / 2}V${-CH / 2 - VG / 2}H${x}V${-rowH + CH / 2}`);
+  if (!P(f.father)) { ghosts.push({ x: slotX(1, 0), y: -rowH, add: 'father', label: '＋ Vater' }); ghostLine(slotX(1, 0)); }
+  if (!P(f.mother)) { ghosts.push({ x: slotX(1, 1), y: -rowH, add: 'mother', label: '＋ Mutter' }); ghostLine(slotX(1, 1)); }
+
+  // --- Partner (rechts daneben) ---
+  const spouses = (f.spouses || []).filter(id => P(id));
+  spouses.forEach((sid, j) => {
+    const x = (j + 1) * step; nodes.push({ id: sid, x, y: 0 });
+    lines.push(`M${j * step + CW / 2},0H${x - CW / 2}`);
+    marks.push({ x: j * step + CW / 2 + HG / 2, y: -6 });
+  });
+  if (!spouses.length) ghosts.push({ x: step, y: 0, add: 'spouse', label: '＋ Partner/in' });
+
+  // --- Nachkommen (nach unten) ---
+  const descW = (id, depth) => {
+    if (depth >= MAX_DESC_GENS) return step;
+    const ch = childrenOf(id); if (!ch.length) return step;
+    return Math.max(step, ch.reduce((s, c) => s + descW(c.id, depth + 1), 0));
+  };
+  const placeKids = (id, px, py, depth, startFn) => {
+    if (depth >= MAX_DESC_GENS) return;
+    const ch = childrenOf(id); if (!ch.length) return;
+    const tot = ch.reduce((s, c) => s + descW(c.id, depth + 1), 0);
+    let left = px - tot / 2; const y = py + rowH, midY = y - CH / 2 - VG / 2;
+    ch.forEach(c => {
+      const w = descW(c.id, depth + 1), x = left + w / 2; left += w;
+      nodes.push({ id: c.id, x, y });
+      const s = startFn(c); lines.push(`M${s.x},${s.y}V${midY}H${x}V${y - CH / 2}`);
+      placeKids(c.id, x, y, depth + 1, () => ({ x, y: y + CH / 2 }));
+    });
+  };
+  const gapX = j => j * step + CW / 2 + HG / 2;
+  const focusStart = c => {
+    const other = c.father === f.id ? c.mother : c.father; const j = spouses.indexOf(other);
+    return j >= 0 ? { x: gapX(j), y: 0 } : { x: 0, y: CH / 2 };
+  };
+  const kids = childrenOf(f.id);
+  let kx = 0;
+  if (kids.length && spouses.length) {
+    const js = new Set(kids.map(c => spouses.indexOf(c.father === f.id ? c.mother : c.father)));
+    if (js.size === 1) { const j = [...js][0]; if (j >= 0) kx = gapX(j); }
+  }
+  placeKids(f.id, kx, 0, 0, focusStart);
+  if (!kids.length) { ghosts.push({ x: 0, y: rowH, add: 'child', label: '＋ Kind' }); lines.push(`M0,${CH / 2}V${rowH - CH / 2}`); }
+
+  // --- Zeichnen ---
+  let out = lines.map(d => `<path class="line" d="${d}"/>`).join('');
+  out += marks.map(m => `<text class="marry" x="${m.x}" y="${m.y}" text-anchor="middle">⚭</text>`).join('');
+  out += ghosts.map(g => `<g class="ghost" data-add="${g.add}"><rect x="${g.x - CW / 2}" y="${g.y - CH / 2}" width="${CW}" height="${CH}" rx="12"/><text x="${g.x}" y="${g.y + 5}" text-anchor="middle">${g.label}</text></g>`).join('');
+  out += nodes.map((n, i) => cardSVG(n, i)).join('');
+  vp.innerHTML = out;
+
+  const xs = nodes.concat(ghosts).map(n => n.x), ys = nodes.concat(ghosts).map(n => n.y);
+  lastBox = { x1: Math.min(...xs) - CW / 2, x2: Math.max(...xs) + CW / 2, y1: Math.min(...ys) - CH / 2, y2: Math.max(...ys) + CH / 2 };
+  if (fit) fitView(); else applyView();
+}
+
+function cardSVG(n, i) {
+  const p = P(n.id), x = n.x - CW / 2, y = n.y - CH / 2;
+  const hasPhoto = !!p.photo;
+  const tx = hasPhoto ? x + 70 : n.x, anchor = hasPhoto ? 'start' : 'middle', max = hasPhoto ? 11 : 18;
+  let s = `<g class="card g-${p.gender}${n.focus ? ' focus' : ''}" data-id="${p.id}">`;
+  s += `<rect class="box" x="${x}" y="${y}" width="${CW}" height="${CH}" rx="12"/>`;
+  if (hasPhoto) {
+    s += `<clipPath id="cp${i}"><circle cx="${x + 36}" cy="${n.y}" r="27"/></clipPath>`;
+    s += `<image href="${esc(p.photo)}" x="${x + 9}" y="${n.y - 27}" width="54" height="54" clip-path="url(#cp${i})" preserveAspectRatio="xMidYMid slice"/>`;
+  }
+  s += `<text class="t-first" x="${tx}" y="${n.y - 12}" text-anchor="${anchor}">${esc(trunc(p.firstName || '?', max))}</text>`;
+  s += `<text class="t-last" x="${tx}" y="${n.y + 7}" text-anchor="${anchor}">${esc(trunc(p.lastName, max))}</text>`;
+  s += `<text class="t-life" x="${tx}" y="${n.y + 27}" text-anchor="${anchor}">${esc(lifeSpan(p))}</text>`;
+  if (isProtected(p)) s += `<text class="t-lock" x="${x + CW - 8}" y="${y + 17}" text-anchor="end">🔒</text>`;
+  return s + '</g>';
+}
+
+function fitView() {
+  if (!lastBox) return;
+  const r = svg.getBoundingClientRect(), pad = 30;
+  const bw = lastBox.x2 - lastBox.x1, bh = lastBox.y2 - lastBox.y1;
+  view.k = Math.max(0.45, Math.min(1.1, Math.min((r.width - pad * 2) / bw, (r.height - pad * 2) / bh)));
+  const fitsW = bw * view.k <= r.width - pad, fitsH = bh * view.k <= r.height - pad;
+  const cx = fitsW ? (lastBox.x1 + lastBox.x2) / 2 : 0;
+  const cy = fitsH ? (lastBox.y1 + lastBox.y2) / 2 : 0;
+  view.x = r.width / 2 - cx * view.k; view.y = r.height / 2 - cy * view.k;
+  applyView();
+}
+function zoomAt(factor, sx, sy) {
+  const k = Math.max(0.2, Math.min(3, view.k * factor));
+  const wx = (sx - view.x) / view.k, wy = (sy - view.y) / view.k;
+  view.k = k; view.x = sx - wx * k; view.y = sy - wy * k; applyView();
+}
+
+// --- Verschieben, Zoomen und Antippen ---
+const pointers = new Map(); let down = null, pinch = null;
+svg.addEventListener('pointerdown', e => {
+  svg.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 1) down = { x: e.clientX, y: e.clientY, target: e.target, moved: false, vx: view.x, vy: view.y };
+  else if (pointers.size === 2) {
+    if (down) down.moved = true;
+    const [a, b] = [...pointers.values()];
+    pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), k: view.k, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, vx: view.x, vy: view.y };
+  }
+});
+svg.addEventListener('pointermove', e => {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const r = svg.getBoundingClientRect();
+  if (pointers.size === 2 && pinch) {
+    const [a, b] = [...pointers.values()];
+    const k = Math.max(0.2, Math.min(3, pinch.k * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d));
+    const wx = (pinch.mx - r.left - pinch.vx) / pinch.k, wy = (pinch.my - r.top - pinch.vy) / pinch.k;
+    const mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top;
+    view.k = k; view.x = mx - wx * k; view.y = my - wy * k; applyView();
+  } else if (pointers.size === 1 && down) {
+    const dx = e.clientX - down.x, dy = e.clientY - down.y;
+    if (Math.hypot(dx, dy) > 7) down.moved = true;
+    if (down.moved) { view.x = down.vx + dx; view.y = down.vy + dy; applyView(); }
+  }
+});
+function pointerEnd(e) {
+  pointers.delete(e.pointerId);
+  if (pointers.size === 0) {
+    if (down && !down.moved && e.type === 'pointerup') {
+      const card = down.target.closest && down.target.closest('[data-id]');
+      const ghost = down.target.closest && down.target.closest('[data-add]');
+      if (card) openDetail(card.dataset.id);
+      else if (ghost) addRelative(data.focusId, ghost.dataset.add);
+      else closeSheet();
+    }
+    down = null; pinch = null;
+  } else if (pointers.size === 1) {
+    const [p] = [...pointers.values()];
+    pinch = null; down = { x: p.x, y: p.y, target: null, moved: true, vx: view.x, vy: view.y };
+  }
+}
+svg.addEventListener('pointerup', pointerEnd);
+svg.addEventListener('pointercancel', pointerEnd);
+svg.addEventListener('wheel', e => {
+  e.preventDefault(); const r = svg.getBoundingClientRect();
+  zoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
+const zoomCenter = f => { const r = svg.getBoundingClientRect(); zoomAt(f, r.width / 2, r.height / 2); };
+document.getElementById('zoomIn').onclick = () => zoomCenter(1.25);
+document.getElementById('zoomOut').onclick = () => zoomCenter(0.8);
+document.getElementById('zoomFit').onclick = fitView;
+window.addEventListener('resize', () => applyView());
+
+// ====================== Detail-Ansicht ======================
+const sheet = document.getElementById('sheet');
+let sheetId = null;
+function chips(list) {
+  return list.length ? `<div class="chips">${list.map(p => `<button class="chip g-${p.gender}" data-open="${p.id}">${esc(fullName(p))}${lifeSpan(p) ? ' <small>(' + esc(lifeSpan(p)) + ')</small>' : ''}</button>`).join('')}</div>` : '';
+}
+function openDetail(id) {
+  const p = P(id); if (!p) return; sheetId = id;
+  const parents = [P(p.father), P(p.mother)].filter(Boolean);
+  const spouses = (p.spouses || []).map(P).filter(Boolean);
+  const kids = childrenOf(id), sibs = siblingsOf(p);
+  const row = (label, val) => val ? `<tr><td>${label}</td><td>${val}</td></tr>` : '';
+  const ev = (d, pl) => [esc(d), pl ? 'in ' + esc(pl) : ''].filter(Boolean).join(' ');
+  const status = { lebt: 'lebt', verstorben: 'verstorben', unbekannt: 'unbekannt' }[p.status] || 'unbekannt';
+  const prot = isProtected(p);
+  sheet.innerHTML = `
+    <div class="sheet-head">${avatarHTML(p)}
+      <div><h2>${esc(fullName(p))}</h2>
+        <div class="sub">${p.birthName ? 'geb. ' + esc(p.birthName) + ' · ' : ''}${esc(lifeSpan(p)) || 'Lebensdaten unbekannt'}</div></div>
+      <button class="close" data-act="close" aria-label="Schließen">✕</button></div>
+    <table class="facts">
+      ${row('Geburt', ev(p.birthDate, p.birthPlace))}
+      ${row('Tod', ev(p.deathDate, p.deathPlace))}
+      ${row('Beruf', esc(p.occupation))}
+      ${row('Status', status)}
+    </table>
+    ${parents.length ? '<h3>Eltern</h3>' + chips(parents) : ''}
+    ${spouses.length ? '<h3>Partner/in</h3>' + chips(spouses) : ''}
+    ${kids.length ? '<h3>Kinder</h3>' + chips(kids) : ''}
+    ${sibs.length ? '<h3>Geschwister</h3>' + chips(sibs) : ''}
+    ${p.notes ? '<h3>Notizen</h3><div class="note">' + linkify(p.notes) + '</div>' : ''}
+    ${p.sources ? '<h3>Quellen</h3><div class="note">' + linkify(p.sources) + '</div>' : ''}
+    ${prot
+      ? `<div class="research locked">🔒 <b>Geschützt.</b> Diese Person lebt vermutlich noch oder ist jünger als ${PROTECT_YEARS} Jahre. Für sie wird keine Online-Recherche angeboten.</div>`
+      : `<div class="research open">🔍 <b>Recherche möglich.</b> Der Recherche-Knopf kommt in Stufe 2.</div>`}
+    <div class="actions">
+      <button class="btn primary" data-act="edit">✏️ Bearbeiten</button>
+      <button class="btn" data-act="focus">🎯 In die Mitte</button>
+      <button class="btn" data-act="father">＋ Vater</button>
+      <button class="btn" data-act="mother">＋ Mutter</button>
+      <button class="btn" data-act="spouse">＋ Partner/in</button>
+      <button class="btn" data-act="child">＋ Kind</button>
+      ${data.rootId !== id ? '<button class="btn wide" data-act="root">🏠 Als Startperson festlegen</button>' : ''}
+      <button class="btn danger wide" data-act="delete">🗑️ Person löschen</button>
+    </div>`;
+  sheet.hidden = false; sheet.scrollTop = 0;
+}
+function closeSheet() { sheet.hidden = true; sheetId = null; }
+sheet.addEventListener('click', e => {
+  const o = e.target.closest('[data-open]'); if (o) return openDetail(o.dataset.open);
+  const a = e.target.closest('[data-act]'); if (!a) return;
+  const id = sheetId, act = a.dataset.act;
+  if (act === 'close') closeSheet();
+  else if (act === 'edit') personForm(id);
+  else if (act === 'focus') { data.focusId = id; save(); closeSheet(); showTree(); renderTree(true); }
+  else if (act === 'root') { data.rootId = id; save(); openDetail(id); }
+  else if (act === 'delete') deletePerson(id);
+  else addRelative(id, act);
+});
+
+// ====================== Formulare ======================
+const modal = document.getElementById('modal');
+function openModal(html) { modal.innerHTML = `<div class="dialog">${html}</div>`; modal.hidden = false; return modal.firstChild; }
+function closeModal() { modal.hidden = true; modal.innerHTML = ''; }
+modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+
+function personOptions(selected, exclude) {
+  return '<option value="">– keine Angabe –</option>' + sortedPersons().filter(p => p.id !== exclude)
+    .map(p => `<option value="${p.id}"${p.id === selected ? ' selected' : ''}>${esc(fullName(p))}${lifeSpan(p) ? ' (' + esc(lifeSpan(p)) + ')' : ''}</option>`).join('');
+}
+
+// Personen-Formular: id = vorhandene Person, sonst neue Person (preset = Vorbelegung, onCreate = Verknüpfung)
+function personForm(id, preset = {}, onCreate = null, title = null) {
+  const isNew = !id;
+  const p = isNew ? newPerson(preset) : JSON.parse(JSON.stringify(P(id)));
+  const sel = (v, opts) => opts.map(([k, l]) => `<option value="${k}"${v === k ? ' selected' : ''}>${l}</option>`).join('');
+  const dlg = openModal(`
+    <h2>${title || (isNew ? 'Neue Person' : 'Person bearbeiten')}</h2>
+    <div class="two">
+      <div><label>Vorname(n)</label><input name="firstName" value="${esc(p.firstName)}"></div>
+      <div><label>Nachname</label><input name="lastName" value="${esc(p.lastName)}"></div>
+    </div>
+    <div class="two">
+      <div><label>Geburtsname</label><input name="birthName" value="${esc(p.birthName)}" placeholder="falls anders"></div>
+      <div><label>Geschlecht</label><select name="gender">${sel(p.gender, [['m', 'männlich'], ['w', 'weiblich'], ['d', 'divers'], ['u', 'unbekannt']])}</select></div>
+    </div>
+    <label>Lebt diese Person noch?</label>
+    <select name="status">${sel(p.status, [['lebt', 'Ja, lebt'], ['verstorben', 'Nein, verstorben'], ['unbekannt', 'Weiß ich nicht']])}</select>
+    <div class="two">
+      <div><label>Geburtsdatum</label><input name="birthDate" value="${esc(p.birthDate)}" placeholder="z. B. 12.03.1890 oder um 1890"></div>
+      <div><label>Geburtsort</label><input name="birthPlace" value="${esc(p.birthPlace)}"></div>
+    </div>
+    <div class="two">
+      <div><label>Sterbedatum</label><input name="deathDate" value="${esc(p.deathDate)}"></div>
+      <div><label>Sterbeort</label><input name="deathPlace" value="${esc(p.deathPlace)}"></div>
+    </div>
+    <label>Beruf</label><input name="occupation" value="${esc(p.occupation)}">
+    <div class="two">
+      <div><label>Vater</label><select name="father">${personOptions(p.father, p.id)}</select></div>
+      <div><label>Mutter</label><select name="mother">${personOptions(p.mother, p.id)}</select></div>
+    </div>
+    ${!isNew && p.spouses.length ? `<label>Partner/in</label><div id="partners">${p.spouses.map(s => P(s) ? `<div class="partner-row" data-sp="${s}"><span>${esc(fullName(P(s)))}</span><button type="button" data-unlink="${s}" title="Verbindung lösen">✕</button></div>` : '').join('')}</div>` : ''}
+    <label>Notizen</label><textarea name="notes" placeholder="Was man über die Person weiß, Geschichten, Erinnerungen …">${esc(p.notes)}</textarea>
+    <label>Quellen</label><textarea name="sources" placeholder="Woher stammt die Info? z. B. Kirchenbuch St. Martin 1890, Seite 12 – oder ein Link">${esc(p.sources)}</textarea>
+    <label>Foto</label>
+    <div style="display:flex;gap:10px;align-items:center">
+      <span id="photoPrev">${avatarHTML(p)}</span>
+      <input type="file" accept="image/*" id="photoIn" style="flex:1">
+      ${p.photo ? '<button type="button" class="btn" id="photoDel">Entfernen</button>' : ''}
+    </div>
+    <div class="actions">
+      <button class="btn" id="cancel">Abbrechen</button>
+      <button class="btn primary" id="ok">💾 Speichern</button>
+    </div>`);
+  const unlinked = new Set();
+  dlg.querySelectorAll('[data-unlink]').forEach(b => b.onclick = () => { unlinked.add(b.dataset.unlink); b.parentElement.remove(); });
+  dlg.querySelector('#photoIn').onchange = async e => {
+    const file = e.target.files[0]; if (!file) return;
+    try { p.photo = await shrinkPhoto(file); dlg.querySelector('#photoPrev').innerHTML = avatarHTML(p); }
+    catch (err) { alert('Das Foto konnte nicht gelesen werden.'); }
+  };
+  const del = dlg.querySelector('#photoDel');
+  if (del) del.onclick = () => { p.photo = ''; dlg.querySelector('#photoPrev').innerHTML = avatarHTML(p); del.remove(); };
+  dlg.querySelector('#cancel').onclick = closeModal;
+  dlg.querySelector('#ok').onclick = () => {
+    dlg.querySelectorAll('[name]').forEach(el => { p[el.name] = el.value.trim(); });
+    p.father = p.father || null; p.mother = p.mother || null;
+    if (!p.firstName && !p.lastName) { alert('Bitte mindestens einen Vor- oder Nachnamen eingeben.'); return; }
+    if (p.deathDate && p.status === 'lebt') p.status = 'verstorben';
+    unlinked.forEach(s => { p.spouses = p.spouses.filter(x => x !== s); if (P(s)) P(s).spouses = P(s).spouses.filter(x => x !== p.id); });
+    data.persons[p.id] = p;
+    if (isNew) {
+      if (!P(data.rootId)) data.rootId = p.id;
+      if (!P(data.focusId)) data.focusId = p.id;
+      if (onCreate) onCreate(p.id);
+    }
+    save(); closeModal(); refresh();
+    if (!isNew || sheetId) openDetail(isNew ? (sheetId || p.id) : p.id);
+  };
+}
+
+function shrinkPhoto(file) {
+  return new Promise((res, rej) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const s = 180, c = document.createElement('canvas'); c.width = c.height = s;
+      const m = Math.min(img.width, img.height);
+      c.getContext('2d').drawImage(img, (img.width - m) / 2, (img.height - m) / 2, m, m, 0, 0, s, s);
+      URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = rej; img.src = url;
+  });
+}
+
+// Verwandte hinzufügen: neue Person anlegen oder vorhandene verknüpfen
+const KIND = { father: 'Vater', mother: 'Mutter', spouse: 'Partner/in', child: 'Kind' };
+function link(baseId, kind, otherId) {
+  const b = P(baseId), o = P(otherId); if (!b || !o || baseId === otherId) return;
+  if (kind === 'father') b.father = otherId;
+  else if (kind === 'mother') b.mother = otherId;
+  else if (kind === 'spouse') {
+    if (!b.spouses.includes(otherId)) b.spouses.push(otherId);
+    if (!o.spouses.includes(baseId)) o.spouses.push(baseId);
+  } else if (kind === 'child') {
+    if (b.gender === 'w' || (b.gender !== 'm' && o.father)) o.mother = baseId; else o.father = baseId;
+    const sp = b.spouses.filter(P);
+    if (sp.length === 1) { if (o.father === baseId && !o.mother) o.mother = sp[0]; else if (o.mother === baseId && !o.father) o.father = sp[0]; }
+  }
+}
+function addRelative(baseId, kind) {
+  const b = P(baseId); if (!b) return;
+  const preset = {};
+  if (kind === 'father') { preset.gender = 'm'; preset.lastName = b.lastName; }
+  if (kind === 'mother') preset.gender = 'w';
+  if (kind === 'child') preset.lastName = b.lastName;
+  if (kind === 'spouse') preset.gender = b.gender === 'm' ? 'w' : b.gender === 'w' ? 'm' : 'u';
+  const title = `${KIND[kind]} von ${esc(fullName(b))}`;
+  const startNew = () => personForm(null, preset, id => link(baseId, kind, id), 'Neu: ' + title);
+  const others = sortedPersons().filter(p => p.id !== baseId);
+  if (!others.length) return startNew();
+  const dlg = openModal(`
+    <h2>${title}</h2>
+    <div class="menu-list">
+      <button class="btn primary" id="new">＋ Neue Person anlegen</button>
+    </div>
+    <label style="margin-top:18px">… oder eine Person verknüpfen, die schon im Stammbaum ist:</label>
+    <select id="pick">${personOptions('', baseId)}</select>
+    <div class="actions">
+      <button class="btn" id="cancel">Abbrechen</button>
+      <button class="btn primary" id="ok">🔗 Verknüpfen</button>
+    </div>`);
+  dlg.querySelector('#new').onclick = startNew;
+  dlg.querySelector('#cancel').onclick = closeModal;
+  dlg.querySelector('#ok').onclick = () => {
+    const v = dlg.querySelector('#pick').value; if (!v) { alert('Bitte eine Person auswählen.'); return; }
+    link(baseId, kind, v); save(); closeModal(); refresh(); if (sheetId) openDetail(sheetId);
+  };
+}
+
+function deletePerson(id) {
+  const p = P(id); if (!p) return;
+  if (!confirm(`„${fullName(p)}“ wirklich löschen? Die Verbindungen zu anderen Personen werden gelöst.`)) return;
+  delete data.persons[id];
+  Object.values(data.persons).forEach(o => {
+    if (o.father === id) o.father = null; if (o.mother === id) o.mother = null;
+    o.spouses = (o.spouses || []).filter(s => s !== id);
+  });
+  if (data.focusId === id) data.focusId = null; if (data.rootId === id) data.rootId = null;
+  save(); closeSheet(); refresh(true);
+}
+
+// ====================== Liste ======================
+function renderList() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const all = sortedPersons();
+  const hit = all.filter(p => !q || [p.firstName, p.lastName, p.birthName, p.birthPlace, p.deathPlace, p.birthDate, p.deathDate, p.occupation]
+    .join(' ').toLowerCase().includes(q));
+  document.getElementById('count').textContent = q ? `${hit.length} von ${all.length} Personen` : `${all.length} Personen im Stammbaum`;
+  document.getElementById('list').innerHTML = hit.map(p => `
+    <div class="row g-${p.gender}" data-open="${p.id}">${avatarHTML(p)}
+      <div><div class="nm">${esc(fullName(p))}${p.birthName ? ' <small>geb. ' + esc(p.birthName) + '</small>' : ''}</div>
+      <div class="sub">${esc(lifeSpan(p))}${p.birthPlace ? ' · ' + esc(p.birthPlace) : ''}</div></div></div>`).join('');
+}
+document.getElementById('search').addEventListener('input', renderList);
+document.getElementById('list').addEventListener('click', e => {
+  const r = e.target.closest('[data-open]'); if (!r) return;
+  data.focusId = r.dataset.open; save(); showTree(); renderTree(true); openDetail(r.dataset.open);
+});
+
+// ====================== Ansichten & Menü ======================
+function showTree() {
+  document.getElementById('treeView').hidden = false; document.getElementById('listView').hidden = true;
+  document.getElementById('btnTree').classList.add('active'); document.getElementById('btnList').classList.remove('active');
+}
+function showList() {
+  document.getElementById('treeView').hidden = true; document.getElementById('listView').hidden = false;
+  document.getElementById('btnList').classList.add('active'); document.getElementById('btnTree').classList.remove('active');
+  closeSheet(); renderList();
+}
+function refresh(fit) { renderTree(fit); if (!document.getElementById('listView').hidden) renderList(); }
+
+document.getElementById('btnTree').onclick = () => { showTree(); renderTree(true); };
+document.getElementById('btnList').onclick = showList;
+document.getElementById('btnHome').onclick = () => { if (P(data.rootId)) { data.focusId = data.rootId; save(); } closeSheet(); showTree(); renderTree(true); };
+document.getElementById('fab').onclick = () => personForm(null);
+document.getElementById('btnFirst').onclick = () => personForm(null);
+document.getElementById('btnDemo').onclick = loadDemo;
+
+document.getElementById('btnMenu').onclick = () => {
+  const n = Object.keys(data.persons).length;
+  const dlg = openModal(`
+    <h2>Menü</h2>
+    <div class="privacy">🔒 <b>Deine Daten bleiben privat.</b> Alles wird nur in diesem Browser auf diesem Gerät gespeichert – nicht im Internet.
+      Wenn du den Browser-Verlauf löschst, sind die Daten weg. <b>Mach deshalb regelmäßig eine Sicherung.</b></div>
+    <div class="menu-list">
+      <button class="btn" data-m="backup">💾 Sicherung speichern (${n} Personen)</button>
+      <button class="btn" data-m="restore">📂 Sicherung laden</button>
+      <button class="btn" data-m="gedout">📤 GEDCOM-Datei exportieren <small>(für andere Stammbaum-Programme)</small></button>
+      <button class="btn" data-m="gedin">📥 GEDCOM-Datei importieren</button>
+      <button class="btn" data-m="demo">👪 Beispiel-Familie laden</button>
+      <button class="btn danger" data-m="wipe">🗑️ Alles löschen</button>
+      <button class="btn" data-m="close">Schließen</button>
+    </div>`);
+  dlg.addEventListener('click', e => {
+    const m = e.target.closest('[data-m]'); if (!m) return;
+    const a = m.dataset.m;
+    if (a === 'close') closeModal();
+    if (a === 'backup') { download(JSON.stringify(data, null, 1), `stammbaum-sicherung-${new Date().toISOString().slice(0, 10)}.json`, 'application/json'); }
+    if (a === 'restore') pickFile('json');
+    if (a === 'gedout') { if (!n) return alert('Noch keine Personen vorhanden.'); download(exportGedcom(), 'stammbaum.ged', 'text/plain'); }
+    if (a === 'gedin') pickFile('ged');
+    if (a === 'demo') { closeModal(); loadDemo(); }
+    if (a === 'wipe') {
+      if (n && !confirm('Wirklich ALLE Personen löschen? Das kann nicht rückgängig gemacht werden (außer mit einer Sicherung).')) return;
+      data = emptyData(); save(); closeModal(); closeSheet(); refresh(true);
+    }
+  });
+};
+
+function download(text, name, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: type + ';charset=utf-8' }));
+  a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+const fileInput = document.getElementById('fileInput');
+function pickFile(mode) { fileInput.dataset.mode = mode; fileInput.value = ''; fileInput.click(); }
+fileInput.onchange = async () => {
+  const file = fileInput.files[0]; if (!file) return;
+  const buf = await file.arrayBuffer();
+  let text = new TextDecoder('utf-8').decode(buf);
+  try {
+    let next;
+    if (fileInput.dataset.mode === 'json') {
+      next = JSON.parse(text); if (!next || !next.persons) throw new Error();
+    } else {
+      if (/^1 CHAR (ANSI|IBM|ASCII)/m.test(text)) text = new TextDecoder('windows-1252').decode(buf);
+      const persons = importGedcom(text); const ids = Object.keys(persons);
+      if (!ids.length) throw new Error();
+      next = { version: 1, persons, rootId: ids[0], focusId: ids[0] };
+    }
+    const cnt = Object.keys(next.persons).length;
+    if (Object.keys(data.persons).length && !confirm(`Die Datei enthält ${cnt} Personen. Sie ersetzt den aktuellen Stammbaum. Fortfahren?`)) return;
+    data = next; save(); closeModal(); closeSheet(); showTree(); refresh(true);
+    alert(`${cnt} Personen geladen.`);
+  } catch (e) { alert('Diese Datei konnte nicht gelesen werden.'); }
+};
+
+// ====================== GEDCOM (Austauschformat) ======================
+const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+function toGedDate(s) {
+  s = (s || '').trim(); let m;
+  if ((m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/)) && MON[+m[2] - 1]) return `${+m[1]} ${MON[+m[2] - 1]} ${m[3]}`;
+  if ((m = s.match(/^(\d{1,2})\.(\d{4})$/)) && MON[+m[1] - 1]) return `${MON[+m[1] - 1]} ${m[2]}`;
+  if ((m = s.match(/^(um|ca\.?|etwa)\s+(\d{4})$/i))) return 'ABT ' + m[2];
+  if ((m = s.match(/^vor\s+(\d{4})$/i))) return 'BEF ' + m[1];
+  if ((m = s.match(/^nach\s+(\d{4})$/i))) return 'AFT ' + m[1];
+  return s;
+}
+function fromGedDate(s) {
+  s = (s || '').trim(); let m;
+  const two = n => String(n).padStart(2, '0');
+  if ((m = s.match(/^(\d{1,2}) ([A-Za-z]{3}) (\d{4})$/)) && MON.includes(m[2].toUpperCase())) return `${two(m[1])}.${two(MON.indexOf(m[2].toUpperCase()) + 1)}.${m[3]}`;
+  if ((m = s.match(/^([A-Za-z]{3}) (\d{4})$/)) && MON.includes(m[1].toUpperCase())) return `${two(MON.indexOf(m[1].toUpperCase()) + 1)}.${m[2]}`;
+  return s.replace(/^ABT\b/i, 'um').replace(/^(EST|CAL)\b/i, 'ca.').replace(/^BEF\b/i, 'vor').replace(/^AFT\b/i, 'nach');
+}
+function exportGedcom() {
+  const one = s => String(s || '').replace(/\s*\n\s*/g, ' ');
+  const ps = Object.values(data.persons), ix = {};
+  ps.forEach((p, i) => ix[p.id] = '@I' + (i + 1) + '@');
+  const fams = new Map();
+  const fam = (a, b) => {
+    const k = [a || '', b || ''].sort().join('|');
+    if (!fams.has(k)) fams.set(k, { parents: [a, b].filter(Boolean), children: [], id: '@F' + (fams.size + 1) + '@' });
+    return fams.get(k);
+  };
+  ps.forEach(p => (p.spouses || []).forEach(s => { if (P(s)) fam(p.id, s); }));
+  ps.forEach(p => { const fa = P(p.father) ? p.father : null, mo = P(p.mother) ? p.mother : null; if (fa || mo) fam(fa, mo).children.push(p.id); });
+  const L = ['0 HEAD', '1 SOUR UNSER_STAMMBAUM', '1 GEDC', '2 VERS 5.5.1', '2 FORM LINEAGE-LINKED', '1 CHAR UTF-8'];
+  const multi = (lvl, tag, text) => String(text).split(/\r?\n/).forEach((ln, i) => L.push(i ? `${lvl + 1} CONT ${ln}` : `${lvl} ${tag} ${ln}`));
+  ps.forEach(p => {
+    L.push(`0 ${ix[p.id]} INDI`);
+    const sur = p.birthName || p.lastName;
+    L.push(`1 NAME ${one(p.firstName)} /${one(sur)}/`);
+    if (p.firstName) L.push('2 GIVN ' + one(p.firstName)); if (sur) L.push('2 SURN ' + one(sur));
+    if (p.birthName && p.lastName && p.birthName !== p.lastName) L.push(`1 NAME ${one(p.firstName)} /${one(p.lastName)}/`, '2 TYPE married');
+    L.push('1 SEX ' + ({ m: 'M', w: 'F' }[p.gender] || 'U'));
+    if (p.birthDate || p.birthPlace) { L.push('1 BIRT'); if (p.birthDate) L.push('2 DATE ' + toGedDate(one(p.birthDate))); if (p.birthPlace) L.push('2 PLAC ' + one(p.birthPlace)); }
+    if (p.deathDate || p.deathPlace) { L.push('1 DEAT'); if (p.deathDate) L.push('2 DATE ' + toGedDate(one(p.deathDate))); if (p.deathPlace) L.push('2 PLAC ' + one(p.deathPlace)); }
+    else if (p.status === 'verstorben') L.push('1 DEAT Y');
+    if (p.occupation) L.push('1 OCCU ' + one(p.occupation));
+    if (p.notes) multi(1, 'NOTE', p.notes);
+    if (p.sources) multi(1, 'SOUR', p.sources);
+    fams.forEach(f => { if (f.parents.includes(p.id)) L.push('1 FAMS ' + f.id); if (f.children.includes(p.id)) L.push('1 FAMC ' + f.id); });
+  });
+  fams.forEach(f => {
+    L.push(`0 ${f.id} FAM`);
+    let [a, b] = f.parents;
+    if (b) { if (P(a).gender === 'w' || P(b).gender === 'm') [a, b] = [b, a]; L.push('1 HUSB ' + ix[a], '1 WIFE ' + ix[b]); }
+    else if (a) L.push((P(a).gender === 'w' ? '1 WIFE ' : '1 HUSB ') + ix[a]);
+    f.children.forEach(c => L.push('1 CHIL ' + ix[c]));
+  });
+  L.push('0 TRLR');
+  return L.join('\r\n') + '\r\n';
+}
+function importGedcom(text) {
+  const lines = text.replace(/^﻿/, '').split(/\r?\n/).map(l => {
+    const m = l.trim().match(/^(\d+)\s+(@[^@]+@\s+)?(\S+)(?:\s(.*))?$/);
+    return m ? { lvl: +m[1], xref: m[2] ? m[2].trim() : null, tag: m[3].toUpperCase(), val: m[4] || '' } : null;
+  }).filter(Boolean);
+  const recs = []; let cur = null;
+  for (const l of lines) { if (l.lvl === 0) { cur = Object.assign({ kids: [] }, l); recs.push(cur); } else if (cur) cur.kids.push(l); }
+  const persons = {}, map = {};
+  for (const r of recs.filter(r => r.tag === 'INDI')) {
+    const p = newPerson(); map[r.xref] = p.id; persons[p.id] = p;
+    let ctx = null, names = 0, txt = null, n2 = null;
+    for (const l of r.kids) {
+      if (l.lvl === 1) {
+        ctx = l.tag; txt = null;
+        if (l.tag === 'NAME') {
+          names++; const m = l.val.match(/^(.*?)\s*\/(.*?)\/\s*(.*)$/);
+          const given = (m ? (m[1] + ' ' + m[3]) : l.val).trim(), sur = m ? m[2].trim() : '';
+          if (names === 1) { p.firstName = given; p.lastName = sur; } else { ctx = 'NAME2'; n2 = sur; }
+        } else if (l.tag === 'SEX') p.gender = { M: 'm', F: 'w' }[l.val.trim().toUpperCase()] || 'u';
+        else if (l.tag === 'DEAT' || l.tag === 'BURI') p.status = 'verstorben';
+        else if (l.tag === 'OCCU') p.occupation = l.val;
+        else if ((l.tag === 'NOTE' || l.tag === 'SOUR') && !l.val.startsWith('@')) {
+          txt = l.tag === 'NOTE' ? 'notes' : 'sources'; if (l.val) p[txt] += (p[txt] ? '\n' : '') + l.val;
+        }
+      } else if (l.lvl === 2) {
+        if (l.tag === 'CONT' && txt) p[txt] += '\n' + l.val;
+        else if (l.tag === 'CONC' && txt) p[txt] += l.val;
+        else if (l.tag === 'DATE' || l.tag === 'PLAC') {
+          const f = l.tag === 'DATE' ? 'Date' : 'Place', v = l.tag === 'DATE' ? fromGedDate(l.val) : l.val;
+          if (ctx === 'BIRT' || ((ctx === 'CHR' || ctx === 'BAPM') && !p['birth' + f])) p['birth' + f] = v;
+          if (ctx === 'DEAT' || (ctx === 'BURI' && !p['death' + f])) p['death' + f] = v;
+        } else if (l.tag === '_MARNM' && ctx === 'NAME') { const v = l.val.replace(/\//g, '').trim(); if (v) { p.birthName = p.lastName; p.lastName = v; } }
+        else if (l.tag === 'TYPE' && ctx === 'NAME2' && /married/i.test(l.val) && n2) { p.birthName = p.lastName; p.lastName = n2; }
+      }
+    }
+  }
+  for (const r of recs.filter(r => r.tag === 'FAM')) {
+    let h = null, w = null; const ch = [];
+    r.kids.filter(l => l.lvl === 1).forEach(l => {
+      const id = map[l.val.trim()];
+      if (l.tag === 'HUSB') h = id; else if (l.tag === 'WIFE') w = id; else if (l.tag === 'CHIL' && id) ch.push(id);
+    });
+    if (h && w) { if (!persons[h].spouses.includes(w)) persons[h].spouses.push(w); if (!persons[w].spouses.includes(h)) persons[w].spouses.push(h); }
+    ch.forEach(c => { if (h) persons[c].father = h; if (w) persons[c].mother = w; });
+  }
+  return persons;
+}
+
+// ====================== Beispiel-Familie (erfunden) ======================
+function loadDemo() {
+  if (Object.keys(data.persons).length && !confirm('Die Beispiel-Familie ersetzt deinen aktuellen Stammbaum. Vorher eine Sicherung machen? Mit „OK“ wird ersetzt.')) return;
+  const d = emptyData(); const add = o => { const p = newPerson(o); d.persons[p.id] = p; return p.id; };
+  const note = 'Erfundene Beispiel-Person.';
+  const fr = add({ firstName: 'Friedrich', lastName: 'Weber', gender: 'm', status: 'verstorben', birthDate: '04.02.1848', birthPlace: 'Rothenburg', deathDate: '1915', occupation: 'Schmied', notes: note, sources: 'Kirchenbuch Rothenburg, Taufen 1848 (Beispiel)' });
+  const an = add({ firstName: 'Anna', lastName: 'Weber', birthName: 'Schmidt', gender: 'w', status: 'verstorben', birthDate: 'um 1852', deathDate: '1921', notes: note });
+  const jo = add({ firstName: 'Josef', lastName: 'Bauer', gender: 'm', status: 'verstorben', birthDate: '1850', deathDate: '1920', occupation: 'Landwirt', notes: note });
+  const th = add({ firstName: 'Theresia', lastName: 'Bauer', birthName: 'Huber', gender: 'w', status: 'verstorben', birthDate: '1855', deathDate: '1930', notes: note });
+  const ka = add({ firstName: 'Karl', lastName: 'Weber', gender: 'm', status: 'verstorben', birthDate: '17.06.1880', birthPlace: 'Rothenburg', deathDate: '1944', occupation: 'Schmiedemeister', father: fr, mother: an, notes: note });
+  const ma = add({ firstName: 'Maria', lastName: 'Weber', birthName: 'Bauer', gender: 'w', status: 'verstorben', birthDate: '1884', deathDate: '1960', father: jo, mother: th, notes: note });
+  const wi = add({ firstName: 'Wilhelm', lastName: 'Weber', gender: 'm', status: 'verstorben', birthDate: '1910', deathDate: '1985', occupation: 'Lehrer', father: ka, mother: ma, notes: note });
+  add({ firstName: 'Elisabeth', lastName: 'Weber', gender: 'w', status: 'verstorben', birthDate: '1913', deathDate: '1999', father: ka, mother: ma, notes: note });
+  const ge = add({ firstName: 'Gertrud', lastName: 'Weber', birthName: 'Klein', gender: 'w', status: 'verstorben', birthDate: '1915', deathDate: '2001', notes: note });
+  add({ firstName: 'Peter', lastName: 'Weber', gender: 'm', status: 'lebt', birthDate: '1950', father: wi, mother: ge, notes: note });
+  add({ firstName: 'Monika', lastName: 'Weber', gender: 'w', status: 'lebt', birthDate: '1953', father: wi, mother: ge, notes: note });
+  d.persons[fr].spouses = [an]; d.persons[an].spouses = [fr];
+  d.persons[jo].spouses = [th]; d.persons[th].spouses = [jo];
+  d.persons[ka].spouses = [ma]; d.persons[ma].spouses = [ka];
+  d.persons[wi].spouses = [ge]; d.persons[ge].spouses = [wi];
+  d.rootId = wi; d.focusId = wi;
+  data = d; save(); closeSheet(); showTree(); refresh(true);
+}
+
+// ====================== Start ======================
+renderTree(true);
+</script>
+</body>
+</html>

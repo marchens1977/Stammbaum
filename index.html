@@ -129,6 +129,7 @@
   .partner-row { display: flex; align-items: center; justify-content: space-between; background: #f3ead4; border-radius: 10px; padding: 6px 10px; margin-bottom: 6px; }
   .partner-row button { background: none; border: none; color: #a33; font-size: 1.1rem; }
   [hidden] { display: none !important; }
+  .google-btn { display: block; text-align: center; text-decoration: none; margin-top: 10px; background: #fff; }
   .research-btn { width: 100%; margin-top: 14px; padding: 13px; font-size: 1rem; }
   .srclist { display: flex; flex-direction: column; gap: 8px; }
   a.src { display: block; text-decoration: none; color: var(--ink); background: #fff; border: 1px solid #d8c9a3; border-radius: 12px; padding: 10px 12px; }
@@ -200,7 +201,7 @@ const CW = 170, CH = 84;          // Größe einer Personen-Karte
 const HG = 28, VG = 66;           // Abstand waagerecht / senkrecht
 const MAX_ANCESTOR_GENS = 3;      // wie viele Generationen nach oben (Eltern, Großeltern, Urgroßeltern)
 const MAX_DESC_GENS = 2;          // wie viele Generationen nach unten (Kinder, Enkel)
-const PROTECT_YEARS = 100;        // jünger als so viele Jahre = geschützt
+const PROTECT_YEARS = 110;        // wer vor mehr als so vielen Jahren geboren wurde, gilt als verstorben
 const STORE_KEY = 'stammbaum-daten-v1';
 const THIS_YEAR = new Date().getFullYear();
 
@@ -245,14 +246,15 @@ function sortedPersons() {
   return Object.values(data.persons).sort((a, b) =>
     (a.lastName + ' ' + a.firstName).localeCompare(b.lastName + ' ' + b.firstName, 'de'));
 }
-// Schutz: Lebende und alle, die jünger als 100 Jahre sind (oder bei denen es unklar ist)
-function isProtected(p) {
-  const by = yearOf(p.birthDate), dy = yearOf(p.deathDate);
-  if (p.status === 'lebt') return true;
-  if (by) return by > THIS_YEAR - PROTECT_YEARS;
-  if (dy && dy <= THIS_YEAR - 30) return false;
-  return true;
+// Schutz: Lebende und alle, bei denen nicht klar ist, ob sie verstorben sind.
+// Verstorbene (egal wann geboren) sind nicht geschützt.
+function isDeceased(p) {
+  const by = yearOf(p.birthDate);
+  if (p.status === 'lebt') return false;
+  if (p.status === 'verstorben' || p.deathDate || p.deathPlace) return true;
+  return !!(by && by <= THIS_YEAR - PROTECT_YEARS);
 }
+function isProtected(p) { return !isDeceased(p); }
 function linkify(text) {
   return esc(text).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
 }
@@ -491,7 +493,8 @@ function openDetail(id) {
     ${p.notes ? '<h3>Notizen</h3><div class="note">' + linkify(p.notes) + '</div>' : ''}
     ${p.sources ? '<h3>Quellen</h3><div class="note">' + linkify(p.sources) + '</div>' : ''}
     ${prot
-      ? `<div class="research locked">🔒 <b>Geschützt.</b> Diese Person lebt vermutlich noch oder ist jünger als ${PROTECT_YEARS} Jahre. Für sie wird keine Online-Recherche angeboten.</div>`
+      ? `<div class="research locked">🔒 <b>Geschützt.</b> Diese Person lebt (oder es ist unklar). Deshalb gibt es hier keine KI-Recherche und keine Ahnenforschungs-Seiten – nur eine normale Google-Suche.
+          <a class="btn google-btn" href="${esc(googleUrl(p))}" target="_blank" rel="noopener">🔎 Bei Google suchen</a></div>`
       : `<button class="btn primary research-btn" data-act="research">🔍 Recherche starten</button>`}
     <div class="actions">
       <button class="btn primary" data-act="edit">✏️ Bearbeiten</button>
@@ -511,6 +514,10 @@ function closeSheet() { sheet.hidden = true; sheetId = null; }
 // ====================== Recherche (Stufe 2) ======================
 // Nur für ungeschützte Personen. Öffnet freie Quellen mit vorausgefülltem Namen
 // und erstellt einen fertigen Text für die Claude-App.
+function googleUrl(p) {
+  const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
+  return 'https://www.google.com/search?q=' + encodeURIComponent(['"' + name + '"', p.birthPlace].filter(Boolean).join(' '));
+}
 async function copyText(t) {
   try { await navigator.clipboard.writeText(t); return true; }
   catch (e) {

@@ -17,8 +17,12 @@ keine App für Dritte, keine Stammbäume über fremde Personen.
 
 ## 2. Wichtige Regeln und Entscheidungen
 - **Datenschutz:** Keine Familiendaten, Sicherungen oder GEDCOM-Dateien ins Repository hochladen.
-- **Schutz Lebender:** Eine Person gilt als geschützt, wenn sie „lebt“, jünger als 100 Jahre ist oder
-  das unklar ist. Für geschützte Personen gibt es **keine** Online-Recherche (auch nicht in Stufe 2/3).
+- **Schutz Lebender (Entscheidung des Nutzers, 2026-11-16):**
+  - **Verstorbene** (Status „verstorben“, Sterbedatum/-ort oder vor mehr als 110 Jahren geboren – `PROTECT_YEARS`):
+    volle Recherche (Quellenliste + Text für Claude), egal wann geboren.
+  - **Lebende oder unklar:** geschützt 🔒 – keine KI-Recherche, keine Ahnenforschungs-Seiten, nur ein normaler
+    Knopf „Bei Google suchen“ (Name + Geburtsort). Im Claude-Text werden geschützte Verwandte ohne Angaben genannt.
+  - Begründung: KI würde zu Lebenden gezielt Profile zusammentragen; Daten Lebender sollen nicht an KI-Dienste gehen.
 - **Keine gestrichelten Platzhalter im Baum** (Wunsch des Nutzers). Verwandte werden hinzugefügt, indem man die Person antippt und in der Detailansicht „＋ Vater/Mutter/Partner/Kind/Bruder/Schwester“ wählt.
 - KI-Funde sind später nur **Vorschläge mit Quelle**; erst nach Bestätigung durch den Nutzer übernehmen.
 - Keine automatische Suche auf Ancestry/MyHeritage (Nutzungsregeln verbieten das).
@@ -33,6 +37,7 @@ keine App für Dritte, keine Stammbäume über fremde Personen.
 | 2026-11-16 | Geschwister der Hauptperson werden im Baum links daneben gezeigt (mit Eltern verbunden); Knopf „＋ Bruder / Schwester“ in der Detailansicht (kein gestrichelter Platzhalter – auf Wunsch entfernt) (übernimmt die Eltern automatisch; ohne Eltern Hinweis, erst Vater/Mutter einzutragen) |
 | 2026-11-16 | Alle gestrichelten Platzhalter aus dem Baum entfernt; Hinzufügen nur noch über die Detailansicht |
 | 2026-11-16 | **Stufe 2:** Knopf „🔍 Recherche starten“ (nur ungeschützte Personen): fertiger Text für die Claude-App (kopieren + claude.ai öffnen; geschützte Verwandte ohne Angaben), Quellenliste mit vorausgefüllter Suche (passend nach Zeit/Ort sortiert, Name wird zusätzlich kopiert), „Fund eintragen“ mit Quelle und Sicherheit (sicher/wahrscheinlich/unsicher) |
+| 2026-11-16 | Schutzregel geändert: alle Verstorbenen recherchierbar; Lebende/unklar nur „Bei Google suchen“ |
 
 ## 4. Nächste Schritte
 - Stufe 2 ist umgesetzt. Die Such-Adressen (URL-Parameter) von GEDBAS, Arolsen, DDB, Find a Grave konnten

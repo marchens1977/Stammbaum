@@ -307,6 +307,20 @@ function renderTree(fit) {
   if (!P(f.father)) { ghosts.push({ x: slotX(1, 0), y: -rowH, add: 'father', label: '＋ Vater' }); ghostLine(slotX(1, 0)); }
   if (!P(f.mother)) { ghosts.push({ x: slotX(1, 1), y: -rowH, add: 'mother', label: '＋ Mutter' }); ghostLine(slotX(1, 1)); }
 
+  // --- Geschwister (links daneben, mit den Eltern verbunden) ---
+  const hasParents = !!(P(f.father) || P(f.mother));
+  const sibs = siblingsOf(f);
+  const parentY = -CH / 2 - VG / 2;
+  sibs.slice().reverse().forEach((s, k) => {
+    const x = -(k + 1) * step; nodes.push({ id: s.id, x, y: 0 });
+    lines.push(`M${x},${-CH / 2}V${parentY}H0`);
+  });
+  if (hasParents) {
+    const gx = -(sibs.length + 1) * step;
+    ghosts.push({ x: gx, y: 0, add: 'sibling', label: '＋ Geschwister' });
+    lines.push(`M${gx},${-CH / 2}V${parentY}H0`);
+  }
+
   // --- Partner (rechts daneben) ---
   const spouses = (f.spouses || []).filter(id => P(id));
   spouses.forEach((sid, j) => {
@@ -492,6 +506,7 @@ function openDetail(id) {
       <button class="btn" data-act="mother">＋ Mutter</button>
       <button class="btn" data-act="spouse">＋ Partner/in</button>
       <button class="btn" data-act="child">＋ Kind</button>
+      <button class="btn wide" data-act="sibling">＋ Bruder / Schwester</button>
       ${data.rootId !== id ? '<button class="btn wide" data-act="root">🏠 Als Startperson festlegen</button>' : ''}
       <button class="btn danger wide" data-act="delete">🗑️ Person löschen</button>
     </div>`;
@@ -902,7 +917,7 @@ function shrinkPhoto(file) {
 }
 
 // Verwandte hinzufügen: neue Person anlegen oder vorhandene verknüpfen
-const KIND = { father: 'Vater', mother: 'Mutter', spouse: 'Partner/in', child: 'Kind' };
+const KIND = { father: 'Vater', mother: 'Mutter', spouse: 'Partner/in', child: 'Kind', sibling: 'Bruder/Schwester' };
 function link(baseId, kind, otherId) {
   const b = P(baseId), o = P(otherId); if (!b || !o || baseId === otherId) return;
   if (kind === 'father') b.father = otherId;
@@ -910,6 +925,9 @@ function link(baseId, kind, otherId) {
   else if (kind === 'spouse') {
     if (!b.spouses.includes(otherId)) b.spouses.push(otherId);
     if (!o.spouses.includes(baseId)) o.spouses.push(baseId);
+  } else if (kind === 'sibling') {
+    if (P(b.father)) o.father = b.father;
+    if (P(b.mother)) o.mother = b.mother;
   } else if (kind === 'child') {
     if (b.gender === 'w' || (b.gender !== 'm' && o.father)) o.mother = baseId; else o.father = baseId;
     const sp = b.spouses.filter(P);
@@ -918,17 +936,27 @@ function link(baseId, kind, otherId) {
 }
 function addRelative(baseId, kind) {
   const b = P(baseId); if (!b) return;
+  if (kind === 'sibling' && !P(b.father) && !P(b.mother)) {
+    const dlg = openModal(`<h2>Bruder / Schwester von ${esc(fullName(b))}</h2>
+      <p>Geschwister werden über die gemeinsamen Eltern verbunden. Bitte trag zuerst <b>Vater oder Mutter</b> ein –
+      der Name darf auch erst einmal „Unbekannt“ sein.</p>
+      <div class="actions"><button class="btn primary" data-k="father">＋ Vater</button><button class="btn primary" data-k="mother">＋ Mutter</button>
+      <button class="btn wide" data-k="">Abbrechen</button></div>`);
+    dlg.querySelectorAll('[data-k]').forEach(x => x.onclick = () => { closeModal(); if (x.dataset.k) addRelative(baseId, x.dataset.k); });
+    return;
+  }
   const preset = {};
   const fam = b.birthName && b.gender === 'w' ? b.birthName : b.lastName;   // Familienname der Eltern
   if (kind === 'father') { preset.gender = 'm'; preset.lastName = fam; preset.status = 'unbekannt'; }
   if (kind === 'mother') { preset.gender = 'w'; preset.lastName = fam; }
   if (kind === 'child') preset.lastName = b.lastName;
+  if (kind === 'sibling') preset.lastName = fam;
   if (kind === 'spouse') { preset.gender = b.gender === 'm' ? 'w' : b.gender === 'w' ? 'm' : 'u'; if (b.gender === 'm') preset.lastName = b.lastName; }
   // Wer ein Elternteil oder Partner von jemandem ist, der vor über 110 Jahren geboren wurde, ist sicher verstorben
   const by = yearOf(b.birthDate);
-  if (by && by < THIS_YEAR - 110 && kind !== 'child') preset.status = 'verstorben';
+  if (by && by < THIS_YEAR - 110 && kind !== 'child' && kind !== 'sibling') preset.status = 'verstorben';
   const title = `${KIND[kind]} von ${esc(fullName(b))}`;
-  const again = kind === 'child' ? { label: 'noch ein Kind', preset } : null;
+  const again = kind === 'child' ? { label: 'noch ein Kind', preset } : kind === 'sibling' ? { label: 'noch ein Geschwister', preset } : null;
   const startNew = () => personForm(null, preset, id => link(baseId, kind, id), 'Neu: ' + title, again);
   const others = sortedPersons().filter(p => p.id !== baseId);
   if (!others.length) return startNew();

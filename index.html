@@ -222,7 +222,7 @@ const MAX_ANCESTOR_GENS = 3;      // wie viele Generationen nach oben (Eltern, G
 const MAX_DESC_GENS = 2;          // wie viele Generationen nach unten (Kinder, Enkel)
 const PROTECT_YEARS = 110;        // wer vor mehr als so vielen Jahren geboren wurde, gilt als verstorben
 const STORE_KEY = 'stammbaum-daten-v1';
-const APP_VERSION = '2026-11-17 Nr. 26';   // bei jeder Änderung hochzählen – steht unten im Menü
+const APP_VERSION = '2026-11-17 Nr. 27';   // bei jeder Änderung hochzählen – steht unten im Menü
 const THIS_YEAR = new Date().getFullYear();
 
 // ====================== Daten ======================
@@ -825,18 +825,23 @@ function buildSuggestions(p, items) {
     else if (ROLE[it.key] || it.key === 'ANDERE') {
       const role = ROLE[it.key] || 'other', r = parseSpoken(it.value);
       if (!r.firstName && !r.lastName) return;
-      if (out.some(o => o.type === 'new' && sameName(o.data, r))) return;   // schon vorgeschlagen
-      const existing = (role === 'other' ? Object.values(data.persons) : relativesOf(p, role)).find(q => sameName(q, r));
-      // Schon mit anderer Verwandtschaft eingetragen (z. B. Partner statt Kind)? Dann nicht noch einmal vorschlagen
-      const allRel = ['father', 'mother', 'spouse', 'child', 'sibling'].flatMap(x => relativesOf(p, x));
-      if (!existing && allRel.some(q => sameName(q, r))) return;
+      if (out.some(o => (o.type === 'new' || o.type === 'link') && sameName(o.data, r))) return;   // schon vorgeschlagen
+      const relHit = role === 'other' ? null : relativesOf(p, role).find(q => sameName(q, r));
+      const anyHit = relHit || Object.values(data.persons).find(q => q.id !== p.id && sameName(q, r));
+      const existing = relHit || anyHit;
       if (existing && r.birthName && r.lastName && r.lastName !== existing.lastName && existing.lastName === r.birthName) {
         // „Monika Schulz geb. Weber“: verheiratet, neuer Nachname
         fieldSug(existing, 'lastName', r.lastName, base, fullName(existing));
         if (!existing.birthName) fieldSug(existing, 'birthName', r.birthName, base, fullName(existing));
       } else if (existing) {
         ['birthName', 'birthDate', 'birthPlace', 'deathDate', 'deathPlace', 'occupation'].forEach(f => { if (r[f] && (!existing[f] || moreExact(f, existing[f], r[f]))) fieldSug(existing, f, r[f], base, fullName(existing)); });
-      } else {
+      }
+      if (existing && !relHit) {
+        // Gibt es schon im Stammbaum, ist aber (noch) nicht so verbunden → zum Verbinden anbieten
+        if (!out.some(o => (o.type === 'link' && o.person === existing.id)))
+          out.push(Object.assign({ type: 'link', person: existing.id, role, relLabel: it.relLabel || '', partnerOf: it.partnerOf || '', childOf: it.childOf || '', data: r,
+            checked: base.sure !== 'unsicher' }, base));
+      } else if (!existing) {
         const replaces = (role === 'father' && P(p.father)) || (role === 'mother' && P(p.mother));
         const noParents = role === 'sibling' && !P(p.father) && !P(p.mother) && !items.some(x => x.key === 'VATER' || x.key === 'MUTTER');
         out.push(Object.assign({ type: 'new', role, relLabel: it.relLabel || '', partnerOf: it.partnerOf || '', childOf: it.childOf || '', data: r, replaces: replaces ? fullName(replaces) : '', disabled: noParents,
@@ -852,8 +857,8 @@ function buildSuggestions(p, items) {
     const ex = Object.values(data.persons).find(q => sameName(q, r)); if (ex) return 'p:' + ex.id;
     const j = out.findIndex(o => o.type === 'new' && sameName(o.data, r)); return j >= 0 ? 'n:' + j : 'p:' + p.id;
   };
-  out.filter(x => x.type === 'new').forEach(x => {
-    const g = x.data.gender || genderOfFirst(x.data.firstName);
+  out.filter(x => x.type === 'new' || x.type === 'link').forEach(x => {
+    const g = (x.type === 'link' && P(x.person).gender !== 'u' ? P(x.person).gender : '') || x.data.gender || genderOfFirst(x.data.firstName);
     const pick = kind => ({ child: g === 'm' ? 'son' : g === 'w' ? 'daughter' : 'child', spouse: g === 'm' ? 'husband' : g === 'w' ? 'wife' : 'partner',
       sibling: g === 'm' ? 'brother' : g === 'w' ? 'sister' : 'sibling' }[kind]);
     x.tgt = 'p:' + p.id;
@@ -867,6 +872,14 @@ function buildSuggestions(p, items) {
     else x.rel = 'none';
     x.disabled = false;
   });
+  // Vorhandene Person, die schon genau so verbunden ist → nicht noch einmal anbieten
+  for (let i = out.length - 1; i >= 0; i--) {
+    const x = out[i]; if (x.type !== 'link') continue;
+    const ex = P(x.person), t = String(x.tgt || ''), T = t.startsWith('p:') ? P(t.slice(2)) : null, kind = (REL_BY[x.rel] || REL_BY.none)[2];
+    const holds = T && ((kind === 'spouse' && (ex.spouses || []).includes(T.id)) || (kind === 'child' && (ex.father === T.id || ex.mother === T.id))
+      || (kind === 'parent' && (T.father === ex.id || T.mother === ex.id)) || (kind === 'sibling' && siblingsOf(T).includes(ex)));
+    if (holds || (kind === 'none' && isConnected(ex))) out.splice(i, 1);
+  }
   return out;
 }
 const REL_CHOICES = [
@@ -877,6 +890,12 @@ const REL_CHOICES = [
   ['none', '– noch nicht verbinden –', 'none', '']
 ];
 const REL_BY = Object.fromEntries(REL_CHOICES.map(r => [r[0], r]));
+// „Alle anhaken“ / „Keine“
+document.addEventListener('click', e => {
+  const b = e.target.closest && e.target.closest('[data-all]'); if (!b) return;
+  const box = b.closest('#fOut, #cOut'); if (!box) return;
+  box.querySelectorAll('input[type=checkbox][data-i]').forEach(x => { if (!x.disabled) x.checked = b.dataset.all === '1'; });
+});
 // „– noch nicht verbinden –“ blendet die Personen-Auswahl aus
 document.addEventListener('change', e => {
   if (e.target.classList && e.target.classList.contains('relsel')) {
@@ -896,21 +915,21 @@ function tgtOptions(sugs, self, sel) {
 }
 // Vorschläge als Liste zum Abhaken anzeigen
 function renderSugs(sugs) {
-  return '<h3>Vorschläge – abhaken, was stimmt:</h3>' + sugs.map((s, i) => {
+  return '<h3>Vorschläge – abhaken, was stimmt:</h3>' + (sugs.length > 2 ? '<div class="two" style="margin-bottom:8px"><button type="button" class="btn" data-all="1">☑ Alle anhaken</button><button type="button" class="btn" data-all="0">☐ Keine</button></div>' : '') + sugs.map((s, i) => {
     let txt, roleSel = '';
     if (s.type === 'field') txt = `${s.who ? '<b>' + esc(s.who) + '</b> – ' : ''}${FIELD_LABEL[s.field]}: <b>${esc(s.field === 'gender' ? ({ m: 'Mann', w: 'Frau' }[s.value] || s.value) : s.value)}</b>${s.old ? ` <span class="warn">(bisher: ${esc(s.old)})</span>` : ''}`;
     else {
-      const d = s.data;
+      const d = s.type === 'link' ? P(s.person) : s.data;
       roleSel = `<select class="relsel" data-rel="${i}">${REL_CHOICES.map(r => `<option value="${r[0]}"${r[0] === s.rel ? ' selected' : ''}>${r[1]}</option>`).join('')}</select>
         <select class="tgtsel" data-tgt="${i}"${s.rel === 'none' ? ' hidden' : ''}>${tgtOptions(sugs, i, s.tgt)}</select>`;
-      txt = `Neue Person: <b>${esc([d.firstName, d.lastName].filter(Boolean).join(' '))}</b>${d.birthName ? ' geb. ' + esc(d.birthName) : ''} ${esc(lifeSpan(d))}${d.birthPlace ? ', ' + esc(d.birthPlace) : ''}`
+      txt = `${s.type === 'link' ? '🔗 Schon im Stammbaum:' : 'Neue Person:'} <b>${esc([d.firstName, d.lastName].filter(Boolean).join(' '))}</b>${d.birthName ? ' geb. ' + esc(d.birthName) : ''} ${esc(lifeSpan(d))}${d.birthPlace ? ', ' + esc(d.birthPlace) : ''}`
         + (s.relLabel ? ` <span class="hint">(laut Text: ${esc(s.relLabel)})</span>` : '')
 
         + (s.replaces ? ` <span class="warn">(ersetzt bisherige/n: ${esc(s.replaces)})</span>` : '')
 
     }
     return `<div class="sug"><label class="sugl"><input type="checkbox" data-i="${i}"${s.checked ? ' checked' : ''}${s.disabled ? ' disabled' : ''}>
-      <span>${txt}</span></label>${s.type === 'new' ? `<div class="sugrole">ist ${roleSel}</div>` : ''}
+      <span>${txt}</span></label>${s.type === 'new' || s.type === 'link' ? `<div class="sugrole">ist ${roleSel}</div>` : ''}
       <div class="sugsrc"><small class="sure-${s.sure}">${s.sure}</small>${s.source ? ' <small>· ' + linkify(s.source) + '</small>' : ''}</div></div>`;
   }).join('');
 }
@@ -966,12 +985,16 @@ function applySuggestions(p, chosen) {
     np.added = Date.now(); data.persons[np.id] = np; made[s.idx] = np; result.created.push(np.id);
     srcLine(np, 'Angaben', s);
   } catch (e) { console.warn('neu', e); result.errors++; } });
+  // Vorhandene Personen, die verbunden werden sollen
+  const links = chosen.filter(s => s.type === 'link');
+  links.forEach(s => { const ex = P(s.person); if (!ex) return; made[s.idx] = ex; const g = (REL_BY[s.rel] || REL_BY.none)[3]; if (g && ex.gender === 'u') ex.gender = g; });
   // 3. Verbinden – erst Partner und Eltern, dann Kinder und Geschwister (damit z. B. Enkel beide Eltern bekommen)
   const target = s => { const t = String(s.tgt || ''); return t.startsWith('n:') ? made[+t.slice(2)] : P(t.slice(2)); };
   const ord = { spouse: 0, parent: 1, child: 2, sibling: 3, none: 4 };
-  news.slice().sort((a, b) => ord[(REL_BY[a.rel] || REL_BY.none)[2]] - ord[(REL_BY[b.rel] || REL_BY.none)[2]]).forEach(s => { try {
+  news.concat(links).sort((a, b) => ord[(REL_BY[a.rel] || REL_BY.none)[2]] - ord[(REL_BY[b.rel] || REL_BY.none)[2]]).forEach(s => { try {
     const np = made[s.idx]; if (!np) return;
     const kind = (REL_BY[s.rel] || REL_BY.none)[2], T = target(s);
+    if (s.type === 'link') { if (kind !== 'none' && T && T.id !== np.id) result.linked = (result.linked || 0) + 1; else return; }
     if (kind === 'none') { np.notes = `Laut Fund: ${s.relLabel || 'Verwandte/r'} von ${fullName(p)} – Verbindung bitte noch setzen („🔗 Verbinden“).`; return; }
     if (!T) { np.notes = 'Laut Fund verwandt – die gewählte Person wurde nicht mit angehakt, deshalb noch nicht verbunden.'; return; }
     if (kind === 'spouse') link(np.id, 'spouse', T.id);
@@ -991,11 +1014,11 @@ function isConnected(q) {
 }
 // Rückmeldung nach dem Speichern: was wurde angelegt, was ist noch nicht verbunden?
 function showSaveResult(p, res) {
-  if (!res || (!res.created.length && !res.errors)) { openDetail(p.id); return; }
+  if (!res || (!res.created.length && !res.errors && !res.linked)) { openDetail(p.id); return; }
   data.focusId = p.id; showTree(); renderTree(true);   // Ergebnis gleich im Baum sichtbar
   const made = res.created.map(P).filter(Boolean), loose = made.filter(q => !isConnected(q) || /noch nicht verbunden|Verbindung bitte noch setzen/.test(q.notes || ''));
   const dlg = openModal(`<h2>✓ Gespeichert</h2>
-    <p><b>${made.length} neue Person${made.length === 1 ? '' : 'en'}</b> angelegt${res.updated ? ` und ${res.updated} Angabe(n) ergänzt` : ''}.</p>
+    <p><b>${made.length} neue Person${made.length === 1 ? '' : 'en'}</b> angelegt${res.linked ? `, <b>${res.linked} vorhandene</b> verbunden` : ''}${res.updated ? ` und ${res.updated} Angabe(n) ergänzt` : ''}.</p>
     ${res.errors ? `<div class="research locked">${res.errors} Vorschlag/Vorschläge konnten nicht übernommen werden.</div>` : ''}
     ${loose.length ? `<div class="research locked">🔗 <b>Noch nicht im Baum verbunden (${loose.length}):</b> Tippe einen Namen an und wähle „🔗 Verbinden“ (z. B. „Kind von …“).</div>
       <div class="chips" style="margin:8px 0">${loose.map(q => `<button class="chip g-${q.gender}" data-go="${q.id}">${esc(fullName(q))}</button>`).join('')}</div>` : ''}
@@ -1290,7 +1313,7 @@ function obituaryNames(raw, p) {
   const out = [], fam = p.lastName || p.birthName || '';
   let lineNo = 0;
   for (const line of lines.slice(0, 16)) {
-    if (/Trauerfeier|Beerdigung|Beisetz|Urnen|Umen|feier\b|anschließend|findet|statt|Uhr|Friedhof|friedhof|Kirche|Traueradresse|Anschrift|Kondolenz|Spende|sowie\b|^\W*\w{0,3}\s*alle\b|Angehörigen|Freunde|^\d/i.test(line)) break;
+    if (/Trauerfeier|Beerdigung|Beisetz|Urnen|Umen|feier\b|anschließend|findet|statt|Uhr|Friedhof|friedhof|Kirche|Traueradresse|Anschrift|Kondolenz|Spende|sowie\b|^\W*\w{0,3}\s*alle\b|Angehörigen|Freunde|^\s*\d{1,2}\.\s*\d|^\s*\d{4}\b/i.test(line)) break;
     let l = line.replace(/\bgeb\.\s*/g, 'geborene ').replace(/\s*\([^)]*\)/g, '')
       .replace(/\s+(?:mit|und|&)\s+Famili\w*|\s+mit\s+allen\s+Angehörigen|\s+im\s+Namen\s+aller\s+Angehörigen/gi, '').replace(/[.:]+$/, '');
     let lineRel = null;
@@ -1299,7 +1322,9 @@ function obituaryNames(raw, p) {
     let chunks = l.split(/\s*[,.]\s*|\s+und\s+|\s*&\s*|\s*\+\s*|\s+sowie\s+|\s+mit\s+/).map(c => c.trim().replace(/^[^A-Za-zÄÖÜäöü]+|[^A-Za-zÄÖÜäöüß]+$/g, '')).filter(Boolean);
     if (OCR_MODE) {   // Lesefehler korrigieren
       const pools = ocrNamePools();
-      chunks = chunks.map(c => { const w = c.split(/\s+/); w[0] = ocrFixWord(w[0], pools.first); if (w.length === 2 && !pools.first.has(w[1])) w[1] = ocrFixWord(w[1], pools.last); return w.join(' '); });
+      chunks = chunks.map(c => { const w = c.split(/\s+/);
+        while (w.length > 1 && (w[0].length <= 2 || (!pools.first.has(w[0]) && pools.first.has(ocrFixWord(w[1], pools.first))))) w.shift();   // „Be Ne Anna“ → „Anna“
+        w[0] = ocrFixWord(w[0], pools.first); if (w.length === 2 && !pools.first.has(w[1])) w[1] = ocrFixWord(w[1], pools.last); return w.join(' '); });
     }
     // „Paul Petra“ (fehlendes Komma) → zwei Personen
     chunks = chunks.flatMap(c => { const w = c.split(/\s+/); return w.length === 2 && FIRST_SET.has(w[0]) && FIRST_SET.has(w[1]) ? w : [c]; });

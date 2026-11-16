@@ -129,6 +129,12 @@
   .partner-row { display: flex; align-items: center; justify-content: space-between; background: #f3ead4; border-radius: 10px; padding: 6px 10px; margin-bottom: 6px; }
   .partner-row button { background: none; border: none; color: #a33; font-size: 1.1rem; }
   [hidden] { display: none !important; }
+  .research-btn { width: 100%; margin-top: 14px; padding: 13px; font-size: 1rem; }
+  .srclist { display: flex; flex-direction: column; gap: 8px; }
+  a.src { display: block; text-decoration: none; color: var(--ink); background: #fff; border: 1px solid #d8c9a3; border-radius: 12px; padding: 10px 12px; }
+  a.src b { color: var(--green); display: block; }
+  a.src span { font-size: .85rem; color: var(--muted); }
+  .toast { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%); background: #333; color: #fff; padding: 10px 16px; border-radius: 20px; z-index: 50; font-size: .9rem; max-width: 90%; text-align: center; }
   .seg { display: flex; gap: 6px; }
   .seg button { flex: 1; padding: 10px 4px; border-radius: 10px; border: 1px solid #c8b895; background: #fff; color: var(--ink); font-size: .95rem; }
   .seg button.on { background: var(--green); border-color: var(--green); color: #fff; }
@@ -486,7 +492,7 @@ function openDetail(id) {
     ${p.sources ? '<h3>Quellen</h3><div class="note">' + linkify(p.sources) + '</div>' : ''}
     ${prot
       ? `<div class="research locked">🔒 <b>Geschützt.</b> Diese Person lebt vermutlich noch oder ist jünger als ${PROTECT_YEARS} Jahre. Für sie wird keine Online-Recherche angeboten.</div>`
-      : `<div class="research open">🔍 <b>Recherche möglich.</b> Der Recherche-Knopf kommt in Stufe 2.</div>`}
+      : `<button class="btn primary research-btn" data-act="research">🔍 Recherche starten</button>`}
     <div class="actions">
       <button class="btn primary" data-act="edit">✏️ Bearbeiten</button>
       <button class="btn" data-act="focus">🎯 In die Mitte</button>
@@ -501,6 +507,134 @@ function openDetail(id) {
   sheet.hidden = false; sheet.scrollTop = 0;
 }
 function closeSheet() { sheet.hidden = true; sheetId = null; }
+
+// ====================== Recherche (Stufe 2) ======================
+// Nur für ungeschützte Personen. Öffnet freie Quellen mit vorausgefülltem Namen
+// und erstellt einen fertigen Text für die Claude-App.
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); return true; }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (e2) {} ta.remove(); return ok;
+  }
+}
+function researchSources(p) {
+  const fn = p.firstName.split(/\s+/)[0] || '', ln = p.birthName || p.lastName || '';
+  const name = [p.firstName, ln].filter(Boolean).join(' ');
+  const by = yearOf(p.birthDate), dy = yearOf(p.deathDate);
+  const place = p.birthPlace || p.deathPlace || '';
+  const e = encodeURIComponent;
+  const inRange = (y, a, b) => y && y >= a && y <= b;
+  const lived = (a, b) => (by || 0) <= b && (dy || (by ? by + 70 : 9999)) >= a;   // lebte (vermutlich) in diesem Zeitraum
+  const list = [];
+  let fs = `https://www.familysearch.org/search/record/results?q.givenName=${e(p.firstName)}&q.surname=${e(ln)}`;
+  if (by) fs += `&q.birthLikeDate.from=${by - 2}&q.birthLikeDate.to=${by + 2}`;
+  if (p.birthPlace) fs += `&q.birthLikePlace=${e(p.birthPlace)}`;
+  if (dy) fs += `&q.deathLikeDate.from=${dy - 2}&q.deathLikeDate.to=${dy + 2}`;
+  list.push({ name: 'FamilySearch', what: 'Riesige Sammlung von Kirchenbüchern und Registern weltweit. Kostenlos, Anmeldung nötig.', url: fs, top: true });
+  list.push({ name: 'GEDBAS (CompGen)', what: 'Stammbäume, die andere Familienforscher veröffentlicht haben. Kostenlos.', url: `https://gedbas.genealogy.net/search/simple?firstname=${e(fn)}&lastname=${e(ln)}`, top: true });
+  if (place) list.push({ name: 'GenWiki: ' + place, what: 'Infos zum Ort: zuständige Pfarrei, Ortsfamilienbuch, Archive, Adressbücher. Kostenlos.', url: `https://wiki.genealogy.net/index.php?search=${e(place)}`, top: true });
+  list.push({ name: 'Online-Ortsfamilienbücher', what: 'Ganze Dörfer mit allen Familien aus Kirchenbüchern zusammengestellt. Kostenlos.', url: 'https://www.online-ofb.de/', top: !!place });
+  list.push({ name: 'Matricula', what: 'Katholische Kirchenbücher als Bilder, nach Ort/Pfarrei. Kostenlos.', url: 'https://data.matricula-online.eu/de/', top: !!place });
+  list.push({ name: 'Archion', what: 'Evangelische Kirchenbücher als Bilder, nach Ort/Pfarrei. Kostenpflichtig.', url: 'https://www.archion.de/', top: false });
+  const ww = inRange(dy, 1914, 1919) || inRange(dy, 1939, 1946) || (!dy && (lived(1914, 1918) || lived(1939, 1945)));
+  if (p.gender !== 'w' && (inRange(dy, 1914, 1919) || (!dy && inRange(by, 1865, 1901))))
+    list.push({ name: 'Verlustlisten 1. Weltkrieg', what: 'Gefallene, Verwundete und Vermisste 1914–1919. Kostenlos.', url: 'https://wiki.genealogy.net/Verlustlisten_Erster_Weltkrieg', top: true });
+  list.push({ name: 'Volksbund Gräbersuche', what: 'Kriegstote beider Weltkriege. Kostenlos.', url: 'https://www.volksbund.de/erinnern-gedenken/graebersuche-online', top: ww });
+  list.push({ name: 'Arolsen Archives', what: 'Verfolgte, Zwangsarbeiter, Displaced Persons (1933–1950). Kostenlos.', url: `https://collections.arolsen-archives.org/de/search?s=${e(name)}`, top: lived(1933, 1950) && (!by || by > 1860) });
+  list.push({ name: 'Zeitungsportal (DDB)', what: 'Alte Zeitungen, z. B. Todes- und Heiratsanzeigen. Kostenlos.', url: `https://www.deutsche-digitale-bibliothek.de/search/newspaper?query=${e('"' + name + '"')}`, top: lived(1850, 1950) });
+  list.push({ name: 'Find a Grave', what: 'Grabsteine weltweit, viele Auswanderer (USA). Kostenlos.', url: `https://www.findagrave.com/memorial/search?firstname=${e(fn)}&lastname=${e(ln)}${by ? '&birthyear=' + by : ''}${dy ? '&deathyear=' + dy : ''}`, top: false });
+  list.push({ name: 'Google', what: 'Allgemeine Websuche nach Name, Ort und Jahr.', url: `https://www.google.com/search?q=${e(['"' + name + '"', place, by || ''].filter(Boolean).join(' '))}`, top: false });
+  return list;
+}
+function claudePrompt(p) {
+  const line = q => {
+    if (!q) return null;
+    if (isProtected(q)) return `${q.gender === 'w' ? 'eine Frau' : q.gender === 'm' ? 'ein Mann' : 'eine Person'} (Angaben aus Datenschutzgründen weggelassen – bitte nicht zu dieser Person recherchieren)`;
+    const parts = [fullName(q)];
+    if (q.birthName) parts.push('geb. ' + q.birthName);
+    if (q.birthDate || q.birthPlace) parts.push('geboren ' + [q.birthDate, q.birthPlace ? 'in ' + q.birthPlace : ''].filter(Boolean).join(' '));
+    if (q.deathDate || q.deathPlace) parts.push('gestorben ' + [q.deathDate, q.deathPlace ? 'in ' + q.deathPlace : ''].filter(Boolean).join(' '));
+    if (q.occupation) parts.push('Beruf: ' + q.occupation);
+    return parts.join(', ');
+  };
+  const rel = [];
+  if (P(p.father)) rel.push('- Vater: ' + line(P(p.father)));
+  if (P(p.mother)) rel.push('- Mutter: ' + line(P(p.mother)));
+  (p.spouses || []).map(P).filter(Boolean).forEach(s => rel.push('- Ehepartner/in: ' + line(s)));
+  childrenOf(p.id).forEach(c => rel.push('- Kind: ' + line(c)));
+  siblingsOf(p).forEach(s => rel.push('- Geschwister: ' + line(s)));
+  return `Ich erforsche meine Familiengeschichte (rein privat) und suche Informationen über einen verstorbenen Vorfahren.
+
+Person: ${line(p)}
+${p.notes ? 'Was ich schon weiß: ' + p.notes.replace(/\s+/g, ' ').trim() + '\n' : ''}${p.sources ? 'Bekannte Quellen: ' + p.sources.replace(/\s+/g, ' ').trim() + '\n' : ''}${rel.length ? 'Bekannte Verwandte:\n' + rel.join('\n') + '\n' : ''}
+Bitte recherchiere in frei zugänglichen Online-Quellen (z. B. FamilySearch, GEDBAS, GenWiki, Online-Ortsfamilienbücher, Verlustlisten, Volksbund, Arolsen Archives, digitalisierte Zeitungen und Adressbücher, Wikipedia).
+
+Bitte beachte:
+1. Nenne zu jedem Fund die genaue Quelle mit Link.
+2. Schätze bei jedem Fund ein, wie sicher es wirklich diese Person ist (sicher / wahrscheinlich / unsicher), und warum. Achte auf Namensvettern.
+3. Erfinde nichts. Wenn du nichts findest, sag es.
+4. Recherchiere nicht zu lebenden Personen.
+5. Sag mir zum Schluss, wo ich selbst weitersuchen kann (z. B. welche Pfarrei/welches Standesamt/Archiv für den Ort und die Zeit zuständig ist und ob die Kirchenbücher online sind).
+6. Wenn du neue Verwandte findest (Eltern, Geschwister, Ehepartner), liste sie am Ende kurz mit Lebensdaten auf.`;
+}
+function openResearch(id) {
+  const p = P(id); if (!p) return;
+  if (isProtected(p)) { alert('Diese Person ist geschützt – für sie gibt es keine Online-Recherche.'); return; }
+  const src = researchSources(p);
+  const item = s => `<a class="src" href="${esc(s.url)}" target="_blank" rel="noopener"><b>${esc(s.name)} ↗</b><span>${esc(s.what)}</span></a>`;
+  const top = src.filter(s => s.top), more = src.filter(s => !s.top);
+  const dlg = openModal(`
+    <h2>🔍 Recherche: ${esc(fullName(p))}</h2>
+    <h3>🤖 Mit Claude recherchieren</h3>
+    <p class="hint" style="font-size:.9rem">Ich erstelle einen fertigen Text mit allem, was du über ${esc(p.firstName || 'die Person')} weißt. Du fügst ihn in der Claude-App ein – Claude sucht dann online und nennt die Quellen.
+      Lebende Verwandte werden darin nicht genannt.</p>
+    <button class="btn primary" id="askClaude" style="width:100%">📋 Text kopieren &amp; Claude öffnen</button>
+    <details style="margin-top:8px"><summary class="hint">Text ansehen</summary><div class="note" style="font-size:.85rem">${esc(claudePrompt(p))}</div></details>
+    <h3>🔎 Selbst suchen</h3>
+    <p class="hint" style="font-size:.9rem">Beim Antippen wird der Name <b>${esc([p.firstName, p.birthName || p.lastName].filter(Boolean).join(' '))}</b> kopiert. Falls das Suchfeld auf der Seite leer ist: lange ins Feld tippen → <i>Einfügen</i>.</p>
+    <div class="srclist">${top.map(item).join('')}</div>
+    ${more.length ? `<details><summary class="hint" style="padding:8px 0">Weitere Quellen (${more.length})</summary><div class="srclist">${more.map(item).join('')}</div></details>` : ''}
+    <h3>📝 Etwas gefunden?</h3>
+    <button class="btn" id="addFind" style="width:100%">Fund eintragen</button>
+    <div class="actions"><button class="btn wide" id="close">Schließen</button></div>
+    <div class="toast" id="toast" hidden></div>`);
+  const toast = msg => { const t = dlg.querySelector('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 3000); };
+  dlg.querySelector('#close').onclick = closeModal;
+  dlg.querySelector('#askClaude').onclick = async () => {
+    const ok = await copyText(claudePrompt(p));
+    window.open('https://claude.ai/new', '_blank', 'noopener');
+    toast(ok ? '✓ Text kopiert – in Claude lange ins Eingabefeld tippen → Einfügen' : 'Kopieren hat nicht geklappt – bitte „Text ansehen“ öffnen und markieren');
+  };
+  dlg.querySelectorAll('a.src').forEach(a => a.addEventListener('click', () => {
+    copyText([p.firstName, p.birthName || p.lastName].filter(Boolean).join(' ')); toast('✓ Name kopiert');
+  }));
+  dlg.querySelector('#addFind').onclick = () => addFinding(id);
+}
+// Fund mit Quelle zur Person hinzufügen (wird an Notizen und Quellen angehängt)
+function addFinding(id) {
+  const p = P(id); if (!p) return;
+  const dlg = openModal(`
+    <h2>📝 Fund eintragen: ${esc(fullName(p))}</h2>
+    <p class="hint">Was hast du herausgefunden? Du kannst auch die Antwort von Claude hier einfügen. Das wird an die Notizen angehängt – Name und Daten änderst du danach selbst unter „Bearbeiten“, wenn du dir sicher bist.</p>
+    <label>Was wurde gefunden?</label><textarea id="fText" placeholder="z. B. Taufe am 18.06.1880 in St. Jakob, Pate: Johann Weber"></textarea>
+    <label>Quelle (Link oder Beschreibung)</label><input id="fSrc" placeholder="z. B. FamilySearch-Link oder Kirchenbuch St. Jakob 1880, S. 45">
+    <label>Wie sicher ist das?</label>
+    <div class="seg" id="fSure"><button type="button" data-v="sicher">sicher</button><button type="button" data-v="wahrscheinlich" class="on">wahrscheinlich</button><button type="button" data-v="unsicher">unsicher</button></div>
+    <div class="actions"><button class="btn" id="cancel">Abbrechen</button><button class="btn primary" id="ok">💾 Speichern</button></div>`);
+  let sure = 'wahrscheinlich';
+  dlg.querySelectorAll('#fSure button').forEach(b => b.onclick = () => { sure = b.dataset.v; dlg.querySelectorAll('#fSure button').forEach(x => x.classList.toggle('on', x === b)); });
+  dlg.querySelector('#cancel').onclick = () => openResearch(id);
+  dlg.querySelector('#ok').onclick = () => {
+    const t = dlg.querySelector('#fText').value.trim(), s = dlg.querySelector('#fSrc').value.trim();
+    if (!t && !s) { alert('Bitte etwas eintragen.'); return; }
+    const date = new Date().toLocaleDateString('de-DE');
+    if (t) p.notes = (p.notes ? p.notes + '\n\n' : '') + `[Recherche ${date}, ${sure}] ${t}`;
+    if (s) p.sources = (p.sources ? p.sources + '\n' : '') + s;
+    save(); closeModal(); refresh(); openDetail(id);
+  };
+}
+
 sheet.addEventListener('click', e => {
   const o = e.target.closest('[data-open]'); if (o) return openDetail(o.dataset.open);
   const a = e.target.closest('[data-act]'); if (!a) return;
@@ -510,6 +644,7 @@ sheet.addEventListener('click', e => {
   else if (act === 'focus') { data.focusId = id; save(); closeSheet(); showTree(); renderTree(true); }
   else if (act === 'root') { data.rootId = id; save(); openDetail(id); }
   else if (act === 'delete') deletePerson(id);
+  else if (act === 'research') openResearch(id);
   else addRelative(id, act);
 });
 

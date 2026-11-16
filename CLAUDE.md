@@ -32,10 +32,11 @@ keine App für Dritte, keine Stammbäume über fremde Personen.
 | 2026-11-16 | Spracheingabe nutzt bekannte Schreibweisen: gleich klingende Namen/Orte/Berufe (Kölner Phonetik + einfache Varianten wie Carl/Karl) werden an den Stammbaum angepasst (z. B. Mayr → Maier); Korrekturen werden angezeigt |
 | 2026-11-16 | Geschwister der Hauptperson werden im Baum links daneben gezeigt (mit Eltern verbunden); Knopf „＋ Bruder / Schwester“ in der Detailansicht (kein gestrichelter Platzhalter – auf Wunsch entfernt) (übernimmt die Eltern automatisch; ohne Eltern Hinweis, erst Vater/Mutter einzutragen) |
 | 2026-11-16 | Alle gestrichelten Platzhalter aus dem Baum entfernt; Hinzufügen nur noch über die Detailansicht |
+| 2026-11-16 | **Stufe 2:** Knopf „🔍 Recherche starten“ (nur ungeschützte Personen): fertiger Text für die Claude-App (kopieren + claude.ai öffnen; geschützte Verwandte ohne Angaben), Quellenliste mit vorausgefüllter Suche (passend nach Zeit/Ort sortiert, Name wird zusätzlich kopiert), „Fund eintragen“ mit Quelle und Sicherheit (sicher/wahrscheinlich/unsicher) |
 
 ## 4. Nächste Schritte
-- **Stufe 2:** Recherche-Knopf ohne Kosten (öffnet FamilySearch, Matricula, CompGen, Volksbund usw.
-  mit vorausgefülltem Namen; erzeugt fertigen Text für die Claude-App) – nur für ungeschützte Personen.
+- Stufe 2 ist umgesetzt. Die Such-Adressen (URL-Parameter) von GEDBAS, Arolsen, DDB, Find a Grave konnten
+  nicht geprüft werden (Netz gesperrt) – deshalb wird der Name zusätzlich kopiert. Rückmeldung des Nutzers abwarten.
 - **Stufe 3:** Echte KI-Recherche (Claude-API mit Websuche), Schlüssel nie in der öffentlichen Seite –
   über Raspberry Pi oder nur lokal eingegeben.
 - Weitere Ideen: Fotos größer ansehen, Ereignisse (Hochzeit, Umzug), Druckansicht.

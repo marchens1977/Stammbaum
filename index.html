@@ -225,7 +225,7 @@ const MAX_ANCESTOR_GENS = 3;      // wie viele Generationen nach oben (Eltern, G
 const MAX_DESC_GENS = 2;          // wie viele Generationen nach unten (Kinder, Enkel)
 const PROTECT_YEARS = 110;        // wer vor mehr als so vielen Jahren geboren wurde, gilt als verstorben
 const STORE_KEY = 'stammbaum-daten-v1';
-const APP_VERSION = '2026-11-17 Nr. 29';   // bei jeder Änderung hochzählen – steht unten im Menü
+const APP_VERSION = '2026-11-17 Nr. 30';   // bei jeder Änderung hochzählen – steht unten im Menü
 const THIS_YEAR = new Date().getFullYear();
 
 // ====================== Daten ======================
@@ -235,6 +235,75 @@ function load() {
   try { const d = JSON.parse(localStorage.getItem(STORE_KEY)); if (d && d.persons) return d; } catch (e) {}
   return emptyData();
 }
+// ====================== Doppelte Personen finden und zusammenführen ======================
+function dupScore(q) {   // wer „besser“ ist, bleibt erhalten: mehr Verbindungen, mehr Angaben, älterer Eintrag
+  const links = (P(q.father) ? 1 : 0) + (P(q.mother) ? 1 : 0) + (q.spouses || []).filter(P).length + siblingsOf(q).length
+    + Object.values(data.persons).filter(x => x.father === q.id || x.mother === q.id).length;
+  const fields = ['birthDate', 'birthPlace', 'deathDate', 'deathPlace', 'occupation', 'birthName', 'photo', 'notes'].filter(f => q[f]).length;
+  return links * 10 + fields - (q.added ? 1 : 0);
+}
+function isDuplicate(a, b) {
+  if (a.id === b.id || !sameName(a, b)) return false;
+  const ya = yearOf(a.birthDate), yb = yearOf(b.birthDate);
+  if (ya && yb && ya !== yb) return false;
+  if (a.gender !== 'u' && b.gender !== 'u' && a.gender !== b.gender) return false;
+  if (a.father === b.id || a.mother === b.id || b.father === a.id || b.mother === a.id) return false;   // Vater/Sohn gleichen Namens
+  // verschiedene, eingetragene Eltern → wohl verschiedene Personen (z. B. Cousins gleichen Namens)
+  if ((P(a.father) && P(b.father) && a.father !== b.father) || (P(a.mother) && P(b.mother) && a.mother !== b.mother)) return false;
+  return true;
+}
+function findDuplicates() {
+  const all = Object.values(data.persons), used = new Set(), groups = [];
+  all.forEach(a => {
+    if (used.has(a.id)) return;
+    const g = [a].concat(all.filter(b => !used.has(b.id) && b.id !== a.id && isDuplicate(a, b)));
+    if (g.length > 1) { g.forEach(x => used.add(x.id)); groups.push(g.sort((x, y) => dupScore(y) - dupScore(x))); }
+  });
+  return groups;
+}
+function mergeInto(keepId, dupId) {
+  const k = P(keepId), d = P(dupId); if (!k || !d || keepId === dupId) return;
+  ['firstName', 'lastName', 'birthName', 'birthDate', 'birthPlace', 'deathDate', 'deathPlace', 'occupation', 'photo'].forEach(f => {
+    if (!k[f] && d[f]) k[f] = d[f]; else if (/Date$/.test(f) && d[f] && moreExact(f, k[f], d[f])) k[f] = d[f];
+  });
+  if (k.gender === 'u') k.gender = d.gender;
+  if (k.status === 'unbekannt' && d.status !== 'unbekannt') k.status = d.status;
+  if (!P(k.father) && P(d.father)) k.father = d.father;
+  if (!P(k.mother) && P(d.mother)) k.mother = d.mother;
+  k.notes = dedupeNotes([k.notes, d.notes].filter(Boolean).join('\n\n'));
+  k.sources = dedupeLines([k.sources, d.sources].filter(Boolean).join('\n'));
+  k.spouses = [...new Set((k.spouses || []).concat(d.spouses || []))];
+  k.siblings = [...new Set((k.siblings || []).concat(d.siblings || []))];
+  // alle Verweise auf die doppelte Person umbiegen
+  Object.values(data.persons).forEach(q => {
+    if (q.father === dupId) q.father = keepId;
+    if (q.mother === dupId) q.mother = keepId;
+    q.spouses = [...new Set((q.spouses || []).map(x => x === dupId ? keepId : x))].filter(x => x !== q.id);
+    q.siblings = [...new Set((q.siblings || []).map(x => x === dupId ? keepId : x))].filter(x => x !== q.id);
+  });
+  if (data.focusId === dupId) data.focusId = keepId;
+  if (data.rootId === dupId) data.rootId = keepId;
+  delete data.persons[dupId];
+}
+function showDuplicates(info) {
+  const groups = findDuplicates();
+  if (!groups.length) { alert(info ? info + '\n\nKeine weiteren Doppelten gefunden. 👍' : 'Keine doppelten Personen gefunden. 👍'); refresh(true); return; }
+  const line = q => `${esc(fullName(q))}${lifeSpan(q) ? ' <small>(' + esc(lifeSpan(q)) + ')</small>' : ''}`;
+  const dlg = openModal(`<h2>🧹 Doppelte zusammenführen</h2>
+    ${info ? `<div class="research open">${esc(info)}</div>` : ''}
+    <p class="hint">Diese Personen scheinen doppelt zu sein (gleicher Name, passende Daten). Beim Zusammenführen bleiben <b>alle Verbindungen und Angaben</b> erhalten – die erste (mit den meisten Verbindungen) bleibt bestehen.</p>
+    ${groups.map((g, i) => `<div class="sug"><div class="sugl"><input type="checkbox" data-g="${i}" checked><span><b>${line(g[0])}</b> ← ${g.slice(1).map(line).join(', ')}
+      <br><small class="hint">${g.map(q => { const n = dupScore(q); return Math.floor(n / 10) + ' Verbindung(en)'; }).join(' / ')}</small></span></div></div>`).join('')}
+    <div class="actions"><button class="btn" id="cancel">Abbrechen</button><button class="btn primary" id="ok">🧹 Zusammenführen</button></div>`);
+  dlg.querySelector('#cancel').onclick = closeModal;
+  dlg.querySelector('#ok').onclick = () => {
+    let n = 0;
+    dlg.querySelectorAll('input[data-g]:checked').forEach(x => { const g = groups[+x.dataset.g]; g.slice(1).forEach(d => { mergeInto(g[0].id, d.id); n++; }); });
+    save(); closeModal(); refresh(true);
+    if (n) showDuplicates(`${n} doppelte Person(en) zusammengeführt.`);   // danach evtl. weitere (z. B. deren Kinder)
+  };
+}
+
 // ---- Person nachträglich mit dem Stammbaum verbinden ----
 function connectPerson(id) {
   const p = P(id); if (!p) return;
@@ -242,14 +311,25 @@ function connectPerson(id) {
     ['child', 'ist Kind von …'], ['grandchild', 'ist Enkel/in von …'], ['spouse', 'ist Partner/in von …'],
     ['sibling', 'ist Bruder/Schwester von …'], ['parent', 'ist Vater/Mutter von …'], ['auntuncle', 'ist Tante/Onkel von …']
   ];
-  const dlg = openModal(`<h2>🔗 ${esc(fullName(p))} verbinden</h2>
+  const cur = [];
+  if (P(p.father)) cur.push(['father', p.father, 'Vater']);
+  if (P(p.mother)) cur.push(['mother', p.mother, 'Mutter']);
+  (p.spouses || []).filter(P).forEach(x => cur.push(['spouse', x, 'Partner/in']));
+  childrenOf(id).forEach(c => cur.push(['child', c.id, 'Kind']));
+  const directSib = new Set((p.siblings || []).filter(P)); Object.values(data.persons).forEach(x => { if ((x.siblings || []).includes(id)) directSib.add(x.id); });
+  directSib.forEach(x => cur.push(['sibling', x, 'Geschwister']));
+  const dlg = openModal(`<h2>🔗 Verbindungen: ${esc(fullName(p))}</h2>
+    ${cur.length ? `<label>Bisherige Verbindungen – falsche mit ✕ lösen:</label>
+      ${cur.map(([k, x, l], i) => `<div class="partner-row"><span>${l}: <b>${esc(fullName(P(x)))}</b></span><button type="button" data-un="${i}" title="Verbindung lösen">✕</button></div>`).join('')}
+      ${siblingsOf(p).length > directSib.size ? '<p class="hint">Geschwister über gemeinsame Eltern löst du, indem du oben Vater/Mutter löst.</p>' : ''}` : ''}
+    <h3>Neue Verbindung</h3>
     <label>Wie ist ${esc(p.firstName || 'die Person')} verwandt?</label>
     <select id="cRel">${REL.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
     <label>… mit wem?</label>
-    <select id="cWho">${personOptions('', id)}</select>
+    <select id="cWho">${personOptions('', id).replace('– keine Angabe –', '– keine neue Verbindung –')}</select>
     <div id="cStep2"></div>
     <div class="hint" id="cMsg"></div>
-    <div class="actions"><button class="btn" id="cancel">Abbrechen</button><button class="btn primary" id="ok">🔗 Verbinden</button></div>`);
+    <div class="actions"><button class="btn" id="cancel">Abbrechen</button><button class="btn primary" id="ok">✓ Fertig / Verbinden</button></div>`);
   const rel = () => dlg.querySelector('#cRel').value, who = () => P(dlg.querySelector('#cWho').value);
   const step2 = () => {   // Enkel/Tante/Onkel: über welches Kind bzw. welchen Elternteil?
     const box = dlg.querySelector('#cStep2'), w = who(); box.innerHTML = '';
@@ -266,10 +346,22 @@ function connectPerson(id) {
     }
   };
   dlg.querySelector('#cRel').onchange = step2; dlg.querySelector('#cWho').onchange = step2;
+  dlg.querySelectorAll('[data-un]').forEach(b => b.onclick = () => {
+    const [k, x] = cur[+b.dataset.un], o = P(x);
+    if (k === 'father') p.father = null; else if (k === 'mother') p.mother = null;
+    else if (k === 'spouse') { p.spouses = p.spouses.filter(y => y !== x); o.spouses = (o.spouses || []).filter(y => y !== id); }
+    else if (k === 'child') { if (o.father === id) o.father = null; if (o.mother === id) o.mother = null; }
+    else if (k === 'sibling') { p.siblings = (p.siblings || []).filter(y => y !== x); o.siblings = (o.siblings || []).filter(y => y !== id); }
+    save(); refresh(); connectPerson(id);
+  });
   dlg.querySelector('#cancel').onclick = () => { closeModal(); openDetail(id); };
   dlg.querySelector('#ok').onclick = () => {
     const w = who(), r = rel(), via = P((dlg.querySelector('#cVia') || {}).value);
-    if (!w) { alert('Bitte eine Person auswählen.'); return; }
+    if (!w) { closeModal(); openDetail(id); return; }   // nichts Neues ausgewählt → nur schließen
+    // Geschwister von jemandem, aber bisher als Kind von dessen Partner eingetragen? → alte (falsche) Eltern-Verbindung lösen
+    if (r === 'sibling' && w) [['father', p.father], ['mother', p.mother]].forEach(([k, par]) => {
+      if (par && (w.spouses || []).includes(par) && confirm(`${p.firstName} ist bisher als Kind von ${fullName(P(par))} eingetragen. Diese Verbindung lösen?`)) p[k] = null;
+    });
     if (r === 'child') link(w.id, 'child', id);
     else if (r === 'spouse') link(id, 'spouse', w.id);
     else if (r === 'parent') link(w.id, p.gender === 'w' ? 'mother' : 'father', id);
@@ -337,8 +429,14 @@ function byBirth(a, b) { return (yearOf(a.birthDate) || 9999) - (yearOf(b.birthD
 function childrenOf(id) { return Object.values(data.persons).filter(c => c.father === id || c.mother === id).sort(byBirth); }
 function siblingsOf(p) {
   // über gemeinsame Eltern ODER direkt als Geschwister verbunden (wenn die Eltern noch fehlen)
-  const direct = new Set((p.siblings || []).filter(id => P(id)));
-  Object.values(data.persons).forEach(x => { if ((x.siblings || []).includes(p.id)) direct.add(x.id); });
+  // direkte Geschwister-Verbindungen, auch über mehrere Ecken (A–B und B–C → A, B, C sind Geschwister)
+  const direct = new Set(), todo = [p.id];
+  while (todo.length) {
+    const cur = todo.pop(), q = P(cur); if (!q) continue;
+    const nb = (q.siblings || []).filter(id => P(id));
+    Object.values(data.persons).forEach(x => { if ((x.siblings || []).includes(cur)) nb.push(x.id); });
+    nb.forEach(id => { if (id !== p.id && !direct.has(id)) { direct.add(id); todo.push(id); } });
+  }
   return Object.values(data.persons).filter(s => s.id !== p.id && (direct.has(s.id) ||
     (p.father && s.father === p.father) || (p.mother && s.mother === p.mother))).sort(byBirth);
 }
@@ -650,7 +748,7 @@ function openDetail(id) {
       <button class="btn" data-act="spouse">＋ Partner/in</button>
       <button class="btn" data-act="child">＋ Kind</button>
       <button class="btn wide" data-act="sibling">＋ Bruder / Schwester</button>
-      <button class="btn wide" data-act="connect">🔗 Mit vorhandener Person verbinden (Enkel, Tante, Onkel …)</button>
+      <button class="btn wide" data-act="connect">🔗 Verbindungen bearbeiten (lösen / Enkel, Tante, Onkel …)</button>
       ${data.rootId !== id ? '<button class="btn wide" data-act="root">🏠 Als Startperson festlegen</button>' : ''}
       <button class="btn danger wide" data-act="delete">🗑️ Person löschen</button>
     </div>`;
@@ -1049,6 +1147,12 @@ function applySuggestions(p, chosen) {
     const kind = (REL_BY[s.rel] || REL_BY.none)[2], T = target(s);
     if (s.type === 'link') {
       if (kind === 'none' || !T || T.id === np.id) return;
+      // war früher (falsch) als Kind der Hauptperson eingetragen, ist aber Geschwister/Elternteil von deren Partner → alte Verbindung lösen
+      if ((kind === 'sibling' || kind === 'parent') && (p.spouses || []).includes(T.id)) {
+        if (np.father === p.id) np.father = null; if (np.mother === p.id) np.mother = null;
+        if (np.father && (p.spouses || []).includes(np.father) && kind === 'sibling') np.father = null;
+        if (np.mother && (p.spouses || []).includes(np.mother) && kind === 'sibling') np.mother = null;
+      }
       const already = (kind === 'spouse' && (np.spouses || []).includes(T.id)) || (kind === 'child' && (np.father === T.id || np.mother === T.id))
         || (kind === 'parent' && (T.father === np.id || T.mother === np.id)) || (kind === 'sibling' && siblingsOf(T).includes(np));
       if (already) return;
@@ -2286,8 +2390,11 @@ function renderList() {
   const hit = all.filter(p => !q || [p.firstName, p.lastName, p.birthName, p.birthPlace, p.deathPlace, p.birthDate, p.deathDate, p.occupation]
     .join(' ').toLowerCase().includes(q));
   const loose = all.filter(p => !isConnected(p)).length;
+  const dupN = findDuplicates().reduce((n, g) => n + g.length - 1, 0);
   document.getElementById('count').innerHTML = (q ? `${hit.length} von ${all.length} Personen` : `${all.length} Personen im Stammbaum`)
-    + (loose && all.length > 1 ? ` · <button class="mini" id="looseBtn">🔗 ${loose} ohne Verbindung</button>` : '');
+    + (loose && all.length > 1 ? ` · <button class="mini" id="looseBtn">🔗 ${loose} ohne Verbindung</button>` : '')
+    + (dupN ? ` · <button class="mini" id="dupBtn">🧹 ${dupN} doppelt</button>` : '');
+  const db = document.getElementById('dupBtn'); if (db) db.onclick = () => showDuplicates();
   const lb = document.getElementById('looseBtn'); if (lb) lb.onclick = () => { document.getElementById('search').value = ''; listLooseOnly = !listLooseOnly; renderList(); };
   const shown = listLooseOnly ? hit.filter(p => !isConnected(p)) : hit;
   const isNew = p => p.added && Date.now() - p.added < 3 * 864e5;
@@ -2332,6 +2439,7 @@ document.getElementById('btnMenu').onclick = () => {
       <button class="btn" data-m="restore">📂 Sicherung laden</button>
       <button class="btn" data-m="gedout">📤 GEDCOM-Datei exportieren <small>(für andere Stammbaum-Programme)</small></button>
       <button class="btn" data-m="gedin">📥 GEDCOM-Datei importieren</button>
+      <button class="btn" data-m="dups">🧹 Doppelte Personen zusammenführen</button>
       <button class="btn" data-m="demo">👪 Beispiel-Familie laden</button>
       <button class="btn danger" data-m="wipe">🗑️ Alles löschen</button>
       <button class="btn" data-m="close">Schließen</button>
@@ -2346,6 +2454,7 @@ document.getElementById('btnMenu').onclick = () => {
     if (a === 'gedout') { if (!n) return alert('Noch keine Personen vorhanden.'); download(exportGedcom(), 'stammbaum.ged', 'text/plain'); }
     if (a === 'gedin') pickFile('ged');
     if (a === 'demo') { closeModal(); loadDemo(); }
+    if (a === 'dups') { closeModal(); showDuplicates(); }
     if (a === 'wipe') {
       if (n && !confirm('Wirklich ALLE Personen löschen? Das kann nicht rückgängig gemacht werden (außer mit einer Sicherung).')) return;
       data = emptyData(); save(); closeModal(); closeSheet(); refresh(true);

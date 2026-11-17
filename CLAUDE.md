@@ -21,6 +21,9 @@ keine App für Dritte, keine Stammbäume über fremde Personen.
   in irgendetwas Öffentliches schreiben: Code, Code-Kommentare, Tagebuch, README, Commit-Texte, Pull Requests, Issues.
   Auch nicht den Vornamen des Nutzers in Beispielen. Immer **erfundene Beispiele** verwenden (Familie Weber: Friedrich, Anna, Karl, Maria, Lena, Tim …).
   Testdateien mit echten Daten nur im Arbeitsordner der Sitzung und danach löschen. Vor jedem Hochladen prüfen (Suche nach echten Namen).
+  Der Nutzer arbeitet in der App und im Chat mit den echten Namen seiner Familie – das ist gewollt. Claude wiederholt diese Namen
+  in seinen Antworten so wenig wie möglich (lieber „die Witwe“, „ihre Geschwister“, „der Verstorbene“) und verwendet in Tests,
+  Beispielen und Vorschaubildern **nur erfundene Familien**. Hochgeladene Screenshots/Texte nach der Fehlersuche aus dem Arbeitsordner löschen.
 - **Schutz Lebender (Entscheidung des Nutzers, 2026-11-16):**
   - **Verstorbene** (Status „verstorben“, Sterbedatum/-ort oder vor mehr als 110 Jahren geboren – `PROTECT_YEARS`):
     volle Recherche (Quellenliste + Text für Claude), egal wann geboren.

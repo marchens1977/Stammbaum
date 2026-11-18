@@ -87,6 +87,20 @@ keine App für Dritte, keine Stammbäume über fremde Personen.
 - Kleine, nummerierte Schritte; klar sagen, was Claude übernimmt und was der Nutzer tun muss.
 - Vor dem Hochladen testen und ein Vorschaubild zeigen.
 - Hardware: Samsung-Smartphone (Chrome) und Raspberry Pi 400.
+- **Hilfsprogramme und Tests gehören ins Projekt** (Regel des Nutzers, 2026-11-18):
+  1. Automatische Prüfungen (Tests) und Hilfsprogramme, die über eine einzelne Aufgabe hinaus nützlich sind, werden im Projekt gespeichert
+     (Ordner `test/` bzw. `werkzeuge/`) – nicht nur im Arbeitsbereich der Sitzung, der beim Archivieren verloren geht.
+  2. Hier im Tagebuch steht, wie man sie startet und was sie prüfen (Abschnitt „Prüfungen“ unten).
+  3. Nach jeder Code-Änderung die vorhandenen Prüfungen laufen lassen; bei neuen Funktionen passende Prüfpunkte ergänzen.
+  4. Gibt es noch keine automatische Prüfung, bei der nächsten Code-Änderung eine einfache anlegen.
+  5. Was Claude nicht selbst testen kann (echtes Handy, Teilen-Menü, Spracheingabe, Netz-Abrufe, Raspberry Pi), unten als Test für den Nutzer vermerken.
+  6. Tests nur mit **erfundenen Familien** (Datenschutz-Regel oben).
+
+### Prüfungen
+- **Automatische Prüfungen:** noch keine im Projekt (frühere Tests lagen nur im Sitzungs-Arbeitsbereich und sind verloren).
+  Bei der nächsten Code-Änderung wird eine erste Prüfung unter `test/` angelegt und hier beschrieben.
+- **Tests für den Nutzer (am Handy):** Wikipedia-Abruf und „🌐 Seite / PDF auslesen“; Such-Links (GEDBAS, Arolsen, DDB, Find a Grave);
+  Teilen → Stammbaum (Text, Link, Bild); „📷 Bild auslesen“; „🎤 Person einsprechen“; Doppelte zusammenführen und Geschwister der Partnerin (Nr. 31).
 
 ## 6. Modell-Hinweis
 Wenn du nicht auf Opus läufst und eine Aufgabe abgeschlossen ist, erinnere am Ende:

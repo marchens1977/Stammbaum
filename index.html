@@ -4,18 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="theme-color" content="#3e5c3a">
+<meta name="theme-color" content="#002d72">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Unser Stammbaum</title>
 <style>
   :root {
-    --bg: #f4ecd8; --paper: #fffaf0; --ink: #3b2f22; --muted: #7a6a55;
-    --green: #3e5c3a; --green2: #56794f; --gold: #c99a2e;
-    --m-bg: #dde9f5; --m-bd: #4a78a8;
-    --w-bg: #f8e1e6; --w-bd: #b45a72;
-    --u-bg: #eee7d6; --u-bd: #8a7a5a;
+    --bg: #eef2f8; --paper: #ffffff; --ink: #14213d; --muted: #5b6880;
+    --green: #002d72; --green2: #1d4f9e; --gold: #ff5910;   /* Farben: Mets-Blau und Mets-Orange */
+    --m-bg: #dfe9f7; --m-bd: #2f62b0;
+    --w-bg: #ffe6d8; --w-bd: #d4622a;
+    --u-bg: #e8ebf0; --u-bd: #7d8799;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
@@ -24,7 +24,7 @@
   button { font: inherit; cursor: pointer; }
 
   header { background: var(--green); color: #fff; display: flex; align-items: center;
-    gap: 6px; padding: 8px 10px; padding-top: max(8px, env(safe-area-inset-top)); }
+    gap: 6px; padding: 8px 10px; padding-top: max(8px, env(safe-area-inset-top)); border-bottom: 4px solid var(--gold); }
   header h1 { font-family: Georgia, serif; font-size: 1.25rem; margin: 0 auto 0 4px; font-weight: normal; }
   header button { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.25);
     border-radius: 10px; padding: 8px 11px; font-size: .95rem; }
@@ -37,9 +37,9 @@
   main { flex: 1; position: relative; overflow: hidden; }
   #treeView, #listView { position: absolute; inset: 0; }
   #tree { width: 100%; height: 100%; touch-action: none; display: block;
-    background: radial-gradient(circle at 50% 40%, #fbf5e6 0%, var(--bg) 70%); }
+    background: radial-gradient(circle at 50% 40%, #f8faff 0%, var(--bg) 70%); }
 
-  .card rect.box { stroke-width: 2; filter: drop-shadow(0 2px 3px rgba(60,40,20,.18)); }
+  .card rect.box { stroke-width: 2; filter: drop-shadow(0 2px 3px rgba(0,30,80,.18)); }
   .card.g-m rect.box { fill: var(--m-bg); stroke: var(--m-bd); }
   .card.g-w rect.box { fill: var(--w-bg); stroke: var(--w-bd); }
   .card.g-u rect.box, .card.g-d rect.box { fill: var(--u-bg); stroke: var(--u-bd); }
@@ -51,16 +51,16 @@
   .t-lock { font-size: 12px; }
   .ghost rect { fill: rgba(255,255,255,.45); stroke: var(--muted); stroke-dasharray: 6 5; stroke-width: 1.5; }
   .ghost text { fill: var(--muted); font: 14px system-ui, sans-serif; pointer-events: none; }
-  .line { fill: none; stroke: #8b7355; stroke-width: 2; }
+  .line { fill: none; stroke: #8a9ab5; stroke-width: 2; }
   .marry { font: 16px Georgia, serif; fill: var(--gold); }
 
   .zoom { position: absolute; left: 10px; bottom: calc(14px + env(safe-area-inset-bottom));
     display: flex; flex-direction: column; gap: 6px; }
-  .zoom button { width: 44px; height: 44px; border-radius: 50%; border: 1px solid #c8b895;
+  .zoom button { width: 44px; height: 44px; border-radius: 50%; border: 1px solid #b8c4d8;
     background: var(--paper); font-size: 1.3rem; color: var(--green); box-shadow: 0 2px 4px rgba(0,0,0,.12); }
 
   #fab { position: absolute; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom));
-    background: var(--green); color: #fff; border: none; border-radius: 28px; padding: 14px 20px;
+    background: var(--gold); color: #fff; border: none; border-radius: 28px; padding: 14px 20px;
     font-size: 1.05rem; box-shadow: 0 3px 8px rgba(0,0,0,.25); }
 
   #emptyHint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; }
@@ -69,7 +69,7 @@
   #emptyHint h2 { font-family: Georgia, serif; margin-top: 0; }
 
   #listView { overflow-y: auto; padding: 12px; padding-bottom: 90px; }
-  #search { width: 100%; padding: 12px; font-size: 1rem; border-radius: 12px; border: 1px solid #c8b895; background: var(--paper); }
+  #search { width: 100%; padding: 12px; font-size: 1rem; border-radius: 12px; border: 1px solid #b8c4d8; background: var(--paper); }
   .count { color: var(--muted); margin: 8px 4px; font-size: .9rem; }
   .row { display: flex; align-items: center; gap: 12px; background: var(--paper); border-radius: 12px;
     padding: 10px 12px; margin-bottom: 8px; border-left: 5px solid var(--u-bd); cursor: pointer; }
@@ -89,7 +89,7 @@
     #sheet { left: auto; top: 60px; width: 400px; max-height: none; border-radius: 18px 0 0 0; }
   }
   .sheet-head { position: sticky; top: 0; background: var(--paper); display: flex; gap: 12px;
-    align-items: center; padding: 16px 0 10px; border-bottom: 1px solid #eadfc4; }
+    align-items: center; padding: 16px 0 10px; border-bottom: 1px solid #dfe5ef; }
   .sheet-head .avatar { width: 64px; height: 64px; font-size: 1.6rem; }
   .sheet-head h2 { font-family: Georgia, serif; margin: 0; font-size: 1.3rem; }
   .sheet-head .sub { color: var(--muted); font-size: .9rem; }
@@ -99,21 +99,21 @@
   .facts td { padding: 4px 0; vertical-align: top; }
   .facts td:first-child { color: var(--muted); width: 90px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip { background: #efe6cf; border: 1px solid #d8c9a3; border-radius: 16px; padding: 6px 12px; font-size: .92rem; color: var(--ink); }
-  .chip.g-m { background: var(--m-bg); border-color: #a9c1dc; } .chip.g-w { background: var(--w-bg); border-color: #e0b1bf; }
-  .note { white-space: pre-wrap; background: #f8f1df; border-radius: 10px; padding: 10px; }
+  .chip { background: #e6ecf5; border: 1px solid #cdd6e4; border-radius: 16px; padding: 6px 12px; font-size: .92rem; color: var(--ink); }
+  .chip.g-m { background: var(--m-bg); border-color: #a9c1e4; } .chip.g-w { background: var(--w-bg); border-color: #f3b896; }
+  .note { white-space: pre-wrap; background: #f2f5fa; border-radius: 10px; padding: 10px; }
   .note a { color: var(--green); word-break: break-all; }
   .research { border-radius: 12px; padding: 12px; margin-top: 14px; font-size: .92rem; }
-  .research.locked { background: #f3e3e0; border: 1px solid #dcb3ab; }
-  .research.open { background: #e5efe0; border: 1px solid #b2c9a7; }
+  .research.locked { background: #e9eef7; border: 1px solid #b8c4d8; }
+  .research.open { background: #fff1e8; border: 1px solid #ffc29f; }
   .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
-  .btn { background: #efe6cf; border: 1px solid #d0bf96; border-radius: 12px; padding: 11px 10px; color: var(--ink); font-size: .95rem; }
+  .btn { background: #e6ecf5; border: 1px solid #b8c4d8; border-radius: 12px; padding: 11px 10px; color: var(--ink); font-size: .95rem; }
   .btn.primary { background: var(--green); color: #fff; border-color: var(--green); }
   .btn.danger { background: #fff; color: #a33; border-color: #d9a3a3; }
   .btn.wide { grid-column: 1 / -1; }
 
   /* Fenster für Formulare */
-  #modal { position: fixed; inset: 0; background: rgba(40,30,20,.45); z-index: 30; display: flex;
+  #modal { position: fixed; inset: 0; background: rgba(0,20,60,.45); z-index: 30; display: flex;
     align-items: flex-end; justify-content: center; }
   @media (min-width: 700px) { #modal { align-items: center; } }
   .dialog { background: var(--paper); width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto;
@@ -122,34 +122,35 @@
   .dialog h2 { font-family: Georgia, serif; margin: 0 0 12px; }
   .dialog label { display: block; font-size: .85rem; color: var(--muted); margin: 10px 0 4px; }
   .dialog input, .dialog select, .dialog textarea { width: 100%; padding: 11px; font-size: 1rem;
-    border-radius: 10px; border: 1px solid #c8b895; background: #fff; color: var(--ink); font-family: inherit; }
+    border-radius: 10px; border: 1px solid #b8c4d8; background: #fff; color: var(--ink); font-family: inherit; }
   .dialog textarea { min-height: 80px; resize: vertical; }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .hint { font-size: .82rem; color: var(--muted); margin-top: 4px; }
   .menu-list { display: flex; flex-direction: column; gap: 8px; }
   .menu-list .btn { text-align: left; padding: 14px; }
-  .privacy { background: #e5efe0; border-radius: 12px; padding: 12px; font-size: .9rem; margin-bottom: 14px; }
-  .partner-row { display: flex; align-items: center; justify-content: space-between; background: #f3ead4; border-radius: 10px; padding: 6px 10px; margin-bottom: 6px; }
+  .privacy { background: #fff1e8; border-radius: 12px; padding: 12px; font-size: .9rem; margin-bottom: 14px; }
+  .partner-row { display: flex; align-items: center; justify-content: space-between; background: #eef2f8; border-radius: 10px; padding: 6px 10px; margin-bottom: 6px; }
   .partner-row button { background: none; border: none; color: #a33; font-size: 1.1rem; }
   [hidden] { display: none !important; }
   .namerow { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 2px; }
-  .namerow input { flex: 1 1 7em; min-width: 6em; padding: 5px 6px; font: .92rem system-ui, sans-serif; border: 1px solid #c8b895; border-radius: 8px; background: #fff; }
+  .namerow input { flex: 1 1 7em; min-width: 6em; padding: 5px 6px; font: .92rem system-ui, sans-serif; border: 1px solid #b8c4d8; border-radius: 8px; background: #fff; }
   .namerow input.nf, .namerow input.nl { font-weight: 600; }
-  input.nameinp { display: inline-block; width: auto; min-width: 9em; max-width: 100%; padding: 4px 6px; font: 600 .95rem system-ui, sans-serif; border: 1px solid #c8b895; border-radius: 8px; }
+  input.nameinp { display: inline-block; width: auto; min-width: 9em; max-width: 100%; padding: 4px 6px; font: 600 .95rem system-ui, sans-serif; border: 1px solid #b8c4d8; border-radius: 8px; }
   div.sugl { display: flex; gap: 10px; align-items: flex-start; } div.sugl input[type=checkbox] { width: 24px; height: 24px; flex: none; margin-top: 1px; }
-  div.sug.holds { background: #f4f1e8; opacity: .85; }
-  .sugrole select { width: auto; max-width: 100%; padding: 5px 6px; font-size: .88rem; margin: 3px 2px 0 0; border-radius: 8px; border: 1px solid #c8b895; background: #fff; }
-  div.sug { background: #fff; border: 1px solid #d8c9a3; border-radius: 12px; padding: 10px; margin: 0 0 8px; font-size: .95rem; }
+  div.sug.holds { background: #f1f3f7; opacity: .85; }
+  .sugrole select { width: auto; max-width: 100%; padding: 5px 6px; font-size: .88rem; margin: 3px 2px 0 0; border-radius: 8px; border: 1px solid #b8c4d8; background: #fff; }
+  div.sug.conflict { background: #fff4ec; border-color: var(--gold); } .fixbtn { display: block; width: 100%; margin-top: 6px; text-align: left; }
+  div.sug { background: #fff; border: 1px solid #cdd6e4; border-radius: 12px; padding: 10px; margin: 0 0 8px; font-size: .95rem; }
   label.sugl { display: flex; gap: 10px; align-items: flex-start; margin: 0; color: var(--ink); font-size: .95rem; }
   label.sugl input { width: 24px; height: 24px; flex: none; margin-top: 1px; }
   .sugrole { margin: 6px 0 0 34px; font-size: .9rem; } .sugsrc { margin: 4px 0 0 34px; } .sugsrc a { color: var(--green); word-break: break-all; }
-  .count .mini, #count .mini { font: .85rem system-ui, sans-serif; background: #fff; border: 1px solid #d0bf96; border-radius: 8px; padding: 2px 8px; color: #a33; }
-  select.rolesel { width: auto; padding: 4px 6px; font-size: .88rem; margin-top: 4px; border-radius: 8px; border: 1px solid #c8b895; background: #fff; }
-  h3 .mini { font: .8rem system-ui, sans-serif; background: none; border: 1px solid #d0bf96; border-radius: 8px; padding: 2px 8px; color: var(--green); margin-left: 6px; vertical-align: middle; }
-  .snip { background: #fff; border: 1px solid #d8c9a3; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; font-size: .88rem; cursor: pointer; }
-  .snip.on { border: 2px solid var(--green); background: #eef5ea; }
+  .count .mini, #count .mini { font: .85rem system-ui, sans-serif; background: #fff; border: 1px solid #b8c4d8; border-radius: 8px; padding: 2px 8px; color: #a33; }
+  select.rolesel { width: auto; padding: 4px 6px; font-size: .88rem; margin-top: 4px; border-radius: 8px; border: 1px solid #b8c4d8; background: #fff; }
+  h3 .mini { font: .8rem system-ui, sans-serif; background: none; border: 1px solid #b8c4d8; border-radius: 8px; padding: 2px 8px; color: var(--green); margin-left: 6px; vertical-align: middle; }
+  .snip { background: #fff; border: 1px solid #cdd6e4; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; font-size: .88rem; cursor: pointer; }
+  .snip.on { border: 2px solid var(--green); background: #fff1e8; }
   .phototip { font-size: .88rem; margin-top: 8px; } .phototip summary { color: var(--green); font-weight: 600; cursor: pointer; } .phototip ol { margin: 6px 0; padding-left: 20px; }
-  label.sug { display: flex; gap: 10px; align-items: flex-start; background: #fff; border: 1px solid #d8c9a3; border-radius: 12px; padding: 10px; margin: 0 0 8px; color: var(--ink); font-size: .95rem; }
+  label.sug { display: flex; gap: 10px; align-items: flex-start; background: #fff; border: 1px solid #cdd6e4; border-radius: 12px; padding: 10px; margin: 0 0 8px; color: var(--ink); font-size: .95rem; }
   label.sug input { width: 22px; height: 22px; flex: none; margin-top: 2px; }
   label.sug a { color: var(--green); word-break: break-all; }
   .warn { color: #a33; font-size: .85rem; }
@@ -157,28 +158,28 @@
   .google-btn { display: block; text-align: center; text-decoration: none; margin-top: 10px; background: #fff; }
   .research-btn { width: 100%; margin-top: 14px; padding: 13px; font-size: 1rem; }
   .srclist { display: flex; flex-direction: column; gap: 8px; }
-  a.src { display: block; text-decoration: none; color: var(--ink); background: #fff; border: 1px solid #d8c9a3; border-radius: 12px; padding: 10px 12px; }
+  a.src { display: block; text-decoration: none; color: var(--ink); background: #fff; border: 1px solid #cdd6e4; border-radius: 12px; padding: 10px 12px; }
   a.src b { color: var(--green); display: block; }
   a.src span { font-size: .85rem; color: var(--muted); }
   .toast { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%); background: #333; color: #fff; padding: 10px 16px; border-radius: 20px; z-index: 50; font-size: .9rem; max-width: 90%; text-align: center; }
   .seg { display: flex; gap: 6px; }
-  .seg button { flex: 1; padding: 10px 4px; border-radius: 10px; border: 1px solid #c8b895; background: #fff; color: var(--ink); font-size: .95rem; }
+  .seg button { flex: 1; padding: 10px 4px; border-radius: 10px; border: 1px solid #b8c4d8; background: #fff; color: var(--ink); font-size: .95rem; }
   .seg button.on { background: var(--green); border-color: var(--green); color: #fff; }
   .two.dates { grid-template-columns: 1.15fr 1fr; }
   .datewrap { display: flex; gap: 6px; position: relative; }
   .datewrap input[name] { flex: 1; min-width: 0; }
-  .calbtn { flex: none; width: 46px; border-radius: 10px; border: 1px solid #c8b895; background: #fff; font-size: 1.2rem; }
+  .calbtn { flex: none; width: 46px; border-radius: 10px; border: 1px solid #b8c4d8; background: #fff; font-size: 1.2rem; }
   .hiddendate { position: absolute; right: 0; bottom: 0; width: 46px !important; height: 1px; opacity: 0; pointer-events: none; padding: 0 !important; border: 0 !important; }
   .datehint { font-size: .8rem; color: var(--green2); min-height: 1.1em; margin-top: 3px; }
   .datehint.free { color: var(--muted); }
-  .voicebtn { width: 100%; margin-bottom: 4px; background: #e5efe0; border-color: #b2c9a7; font-weight: 600; }
-  .voice { background: #f3ecd9; border-radius: 12px; padding: 10px; margin-bottom: 6px; }
+  .voicebtn { width: 100%; margin-bottom: 4px; background: #fff1e8; border-color: #ffc29f; font-weight: 600; }
+  .voice { background: #eef2f8; border-radius: 12px; padding: 10px; margin-bottom: 6px; }
   .voice textarea { min-height: 70px; margin: 8px 0; }
   .voice .btn.rec { background: #b03a3a; color: #fff; border-color: #b03a3a; animation: pulse 1.2s infinite; }
   @keyframes pulse { 50% { opacity: .7; } }
   .flash { animation: flash 2.5s ease-out; }
   @keyframes flash { 0% { background: #fde68a; } 100% { background: #fff; } }
-  details.more { margin-top: 16px; border-top: 1px solid #eadfc4; padding-top: 6px; }
+  details.more { margin-top: 16px; border-top: 1px solid #dfe5ef; padding-top: 6px; }
   details.more summary { cursor: pointer; color: var(--green); font-weight: 600; padding: 8px 0; }
 </style>
 </head>
@@ -228,7 +229,7 @@ const MAX_ANCESTOR_GENS = 3;      // wie viele Generationen nach oben (Eltern, G
 const MAX_DESC_GENS = 2;          // wie viele Generationen nach unten (Kinder, Enkel)
 const PROTECT_YEARS = 110;        // wer vor mehr als so vielen Jahren geboren wurde, gilt als verstorben
 const STORE_KEY = 'stammbaum-daten-v1';
-const APP_VERSION = '2026-11-17 Nr. 31';   // bei jeder Änderung hochzählen – steht unten im Menü
+const APP_VERSION = '2026-11-19 Nr. 32';   // bei jeder Änderung hochzählen – steht unten im Menü
 const THIS_YEAR = new Date().getFullYear();
 
 // ====================== Daten ======================
@@ -316,7 +317,11 @@ function mergeWithDialog(id) {
 }
 function showDuplicates(info) {
   const groups = findDuplicates();
-  if (!groups.length) { alert(info ? info + '\n\nKeine weiteren Doppelten gefunden. 👍' : 'Keine doppelten Personen gefunden. 👍'); refresh(true); return; }
+  if (!groups.length) {
+    const msg = info ? info + '\n\nKeine weiteren Doppelten gefunden. 👍' : 'Keine doppelten Personen gespeichert. 👍';
+    if (findConflicts().length) { showConflicts(msg + '\nAber: Manche Personen sind widersprüchlich verbunden und erscheinen deshalb doppelt im Baum.'); return; }
+    alert(msg); refresh(true); return;
+  }
   const line = q => `${esc(fullName(q))}${lifeSpan(q) ? ' <small>(' + esc(lifeSpan(q)) + ')</small>' : ''}`;
   const dlg = openModal(`<h2>🧹 Doppelte zusammenführen</h2>
     ${info ? `<div class="research open">${esc(info)}</div>` : ''}
@@ -331,6 +336,75 @@ function showDuplicates(info) {
     save(); closeModal(); refresh(true);
     if (n) showDuplicates(`${n} doppelte Person(en) zusammengeführt.`);   // danach evtl. weitere (z. B. deren Kinder)
   };
+}
+
+// ====================== Widersprüchliche Verbindungen ======================
+// z. B. jemand ist Partner/in UND Geschwister (oder Elternteil) derselben Person.
+// Dann ist niemand doppelt gespeichert, aber die Person würde im Baum an zwei Stellen stehen.
+function findConflicts(onlyId) {
+  const out = [], seen = new Set();
+  Object.values(data.persons).forEach(a => {
+    (a.spouses || []).map(P).filter(Boolean).forEach(b => {
+      const key = [a.id, b.id].sort().join('|'); if (seen.has(key)) return; seen.add(key);
+      if (onlyId && a.id !== onlyId && b.id !== onlyId) return;
+      if (siblingsOf(a).some(x => x.id === b.id)) out.push({ kind: 'sib', a: a.id, b: b.id });
+      else if (a.father === b.id || a.mother === b.id) out.push({ kind: 'par', a: a.id, b: b.id });   // b ist Elternteil von a
+      else if (b.father === a.id || b.mother === a.id) out.push({ kind: 'par', a: b.id, b: a.id });
+    });
+  });
+  return out;
+}
+function conflictText(c) {
+  const a = P(c.a), b = P(c.b);
+  return c.kind === 'sib'
+    ? `<b>${esc(fullName(a))}</b> und <b>${esc(fullName(b))}</b> sind als <b>Partner</b> und gleichzeitig als <b>Geschwister</b> eingetragen.`
+    : `<b>${esc(fullName(b))}</b> ist als <b>Partner/in</b> und gleichzeitig als <b>${b.gender === 'w' ? 'Mutter' : b.gender === 'm' ? 'Vater' : 'Elternteil'}</b> von <b>${esc(fullName(a))}</b> eingetragen.`;
+}
+function conflictFixes(c) {   // [Schlüssel, Beschriftung]
+  const a = P(c.a), b = P(c.b), fixes = [['nospouse', `Sind keine Partner – Partner-Verbindung lösen`]];
+  if (c.kind === 'sib') {
+    const parN = q => [P(q.father), P(q.mother)].filter(Boolean).map(fullName).join(' und ');
+    [a, b].forEach(q => fixes.push(['nosib:' + q.id, `${fullName(q)} ist kein Geschwister` + (parN(q) ? ` (Verbindung zu den Eltern ${parN(q)} lösen)` : ' – Verbindung lösen')]));
+  } else fixes.push(['nopar', `${fullName(b)} ist nicht ${b.gender === 'w' ? 'Mutter' : b.gender === 'm' ? 'Vater' : 'Elternteil'} von ${fullName(a)} – lösen`]);
+  return fixes;
+}
+function fixConflict(c, how) {
+  const a = P(c.a), b = P(c.b); if (!a || !b) return;
+  if (how === 'nospouse') {
+    a.spouses = (a.spouses || []).filter(x => x !== b.id); b.spouses = (b.spouses || []).filter(x => x !== a.id);
+  } else if (how === 'nopar') {
+    if (a.father === b.id) a.father = null; if (a.mother === b.id) a.mother = null;
+  } else if (how.startsWith('nosib:')) {
+    const q = P(how.slice(6)), other = q === a ? b : a; if (!q) return;
+    const group = new Set(siblingsOf(other).map(x => x.id).concat(other.id));
+    if (q.father && q.father === other.father) q.father = null;
+    if (q.mother && q.mother === other.mother) q.mother = null;
+    // direkte Geschwister-Verbindungen zwischen q und der Geschwistergruppe des anderen lösen
+    q.siblings = (q.siblings || []).filter(x => !group.has(x));
+    group.forEach(id => { const g = P(id); if (g) g.siblings = (g.siblings || []).filter(x => x !== q.id); });
+  }
+}
+function conflictBlock(list) {
+  return list.map((c, i) => `<div class="sug conflict"><div>⚠️ ${conflictText(c)}<br><small class="hint">Deshalb erschien ${esc(P(c.b).firstName || 'die Person')} bisher doppelt im Baum. Welche Verbindung ist falsch?</small></div>
+    ${conflictFixes(c).map(([k, l]) => `<button class="btn wide fixbtn" data-c="${i}" data-fix="${esc(k)}">✕ ${esc(l)}</button>`).join('')}</div>`).join('');
+}
+function bindConflictButtons(root, list, after) {
+  root.querySelectorAll('button[data-fix]').forEach(bt => bt.onclick = () => {
+    const c = list[+bt.dataset.c]; if (!c) return;
+    if (!confirm(bt.textContent.replace(/^✕\s*/, '') + '?')) return;
+    fixConflict(c, bt.dataset.fix); save(); after();
+  });
+}
+function showConflicts(info) {
+  const list = findConflicts();
+  if (!list.length) { alert((info ? info + '\n\n' : '') + 'Keine widersprüchlichen Verbindungen gefunden. 👍'); refresh(true); return; }
+  const dlg = openModal(`<h2>⚠️ Verbindungen prüfen</h2>
+    ${info ? `<div class="research open">${esc(info)}</div>` : ''}
+    <p class="hint">Hier ist niemand doppelt gespeichert – aber eine Person ist auf zwei Arten verbunden, die nicht zusammenpassen. Tippe an, welche Verbindung <b>falsch</b> ist. Die Person selbst bleibt erhalten.</p>
+    ${conflictBlock(list)}
+    <div class="actions"><button class="btn wide" id="cancel">Schließen</button></div>`);
+  dlg.querySelector('#cancel').onclick = () => { closeModal(); refresh(true); };
+  bindConflictButtons(dlg, list, () => { closeModal(); refresh(true); showConflicts('✓ Verbindung gelöst.'); });
 }
 
 // ---- Person nachträglich mit dem Stammbaum verbinden ----
@@ -512,11 +586,13 @@ function renderTree(fit) {
 
   // --- Vorfahren (nach oben) ---
   const anc = [[f.id]]; let maxG = 0;
+  const seenAnc = new Set([f.id]);   // jede/n Vorfahr/in nur einmal zeigen (auch bei falschen/doppelten Verbindungen)
+  const once = id => (id && !seenAnc.has(id) ? (seenAnc.add(id), id) : null);
   for (let g = 1; g <= MAX_ANCESTOR_GENS; g++) {
     const row = []; let any = false;
     for (const cid of anc[g - 1]) {
       const c = P(cid);
-      const fa = c && P(c.father) ? c.father : null, mo = c && P(c.mother) ? c.mother : null;
+      const fa = once(c && P(c.father) ? c.father : null), mo = once(c && P(c.mother) ? c.mother : null);
       row.push(fa, mo); if (fa || mo) any = true;
     }
     if (!any) break;
@@ -538,15 +614,19 @@ function renderTree(fit) {
     lines.push(d);
   }
 
+  // Ab hier (außer Vorfahren) jede Person nur einmal zeichnen – sonst erscheint z. B. jemand,
+  // der versehentlich als Partner UND als Geschwister eingetragen ist, doppelt im Baum.
+  const drawn = id => nodes.some(n => n.id === id);
   // --- Geschwister (links daneben, mit den Eltern verbunden) ---
-  const sibs = siblingsOf(f);
+  const fSp = (f.spouses || []).filter(id => P(id));
+  const sibs = siblingsOf(f).filter(sb => !fSp.includes(sb.id) && !drawn(sb.id));
   const parentY = -CH / 2 - VG / 2;
   let cur = -step;
   sibs.slice().reverse().forEach(sb => {   // jüngste/älteste nach links, Partner jeweils noch weiter links daneben
     const x = cur; nodes.push({ id: sb.id, x, y: 0 });
     lines.push(`M${x},${-CH / 2}V${parentY}H0`);
     const m = (sb.spouses || []).map(P).filter(Boolean)[0];
-    if (m && m.id !== f.id) { nodes.push({ id: m.id, x: x - step, y: 0 }); lines.push(`M${x - CW / 2},0H${x - step + CW / 2}`); marks.push({ x: x - step / 2, y: -6 }); cur -= step; }
+    if (m && m.id !== f.id && !fSp.includes(m.id) && !drawn(m.id)) { nodes.push({ id: m.id, x: x - step, y: 0 }); lines.push(`M${x - CW / 2},0H${x - step + CW / 2}`); marks.push({ x: x - step / 2, y: -6 }); cur -= step; }
     cur -= step;
   });
   // Tanten/Onkel: Geschwister des Vaters links neben dem Vater, der Mutter rechts neben der Mutter
@@ -560,7 +640,7 @@ function renderTree(fit) {
   });
 
   // --- Partner (rechts daneben) ---
-  const spouses = (f.spouses || []).filter(id => P(id));
+  const spouses = fSp.filter(id => !drawn(id));
   spouses.forEach((sid, j) => {
     const x = (j + 1) * step; nodes.push({ id: sid, x, y: 0 });
     lines.push(`M${j * step + CW / 2},0H${x - CW / 2}`);
@@ -597,7 +677,8 @@ function renderTree(fit) {
     let left = px - tot / 2; const y = py + rowH, midY = y - CH / 2 - VG / 2;
     ch.forEach(c => {
       const w = descW(c.id, depth + 1), center = left + w / 2; left += w;
-      const mate = mateOf(c), x = mate ? center - step / 2 : center;
+      if (drawn(c.id)) return;   // schon gezeigt (z. B. als Partner/in eines Geschwisters)
+      const mt = mateOf(c), mate = mt && !drawn(mt.id) ? mt : null, x = mate ? center - step / 2 : center;
       nodes.push({ id: c.id, x, y });
       if (mate) {
         nodes.push({ id: mate.id, x: center + step / 2, y });
@@ -745,6 +826,7 @@ function openDetail(id) {
   const ev = (d, pl) => [esc(d), pl ? 'in ' + esc(pl) : ''].filter(Boolean).join(' ');
   const status = { lebt: 'lebt', verstorben: 'verstorben', unbekannt: 'unbekannt' }[p.status] || 'unbekannt';
   const prot = isProtected(p);
+  const conf = findConflicts(id);
   sheet.innerHTML = `
     <div class="sheet-head">${avatarHTML(p)}
       <div><h2>${esc(fullName(p))}</h2>
@@ -767,6 +849,7 @@ function openDetail(id) {
           <a class="btn google-btn" href="${esc(googleUrl(p))}" target="_blank" rel="noopener">🔎 Bei Google suchen</a>
           <button class="btn google-btn" data-act="finding">📥 Fund übernehmen</button></div>`
       : `<button class="btn primary research-btn" data-act="research">🔍 Recherche starten</button>`}
+    ${conf.length ? `<div style="margin-top:14px">${conflictBlock(conf)}</div>` : ''}
     ${Object.keys(data.persons).length > 1 && !isConnected(p) ? `<div class="research locked" style="margin-top:14px">🔗 <b>Noch nicht im Stammbaum verbunden.</b> Deshalb erscheint ${esc(p.firstName || 'die Person')} im Baum nur, wenn sie in der Mitte steht.
       <button class="btn primary google-btn" data-act="connect" style="color:#fff">🔗 Jetzt verbinden</button></div>` : ''}
     <div class="actions">
@@ -782,6 +865,7 @@ function openDetail(id) {
       ${data.rootId !== id ? '<button class="btn wide" data-act="root">🏠 Als Startperson festlegen</button>' : ''}
       <button class="btn danger wide" data-act="delete">🗑️ Person löschen</button>
     </div>`;
+  bindConflictButtons(sheet, conf, () => { refresh(); openDetail(id); });
   sheet.hidden = false; sheet.scrollTop = 0;
 }
 function closeSheet() { sheet.hidden = true; sheetId = null; }
@@ -2439,11 +2523,13 @@ function renderList() {
   const hit = all.filter(p => !q || [p.firstName, p.lastName, p.birthName, p.birthPlace, p.deathPlace, p.birthDate, p.deathDate, p.occupation]
     .join(' ').toLowerCase().includes(q));
   const loose = all.filter(p => !isConnected(p)).length;
-  const dupN = findDuplicates().reduce((n, g) => n + g.length - 1, 0);
+  const dupN = findDuplicates().reduce((n, g) => n + g.length - 1, 0), conN = findConflicts().length;
   document.getElementById('count').innerHTML = (q ? `${hit.length} von ${all.length} Personen` : `${all.length} Personen im Stammbaum`)
     + (loose && all.length > 1 ? ` · <button class="mini" id="looseBtn">🔗 ${loose} ohne Verbindung</button>` : '')
-    + (dupN ? ` · <button class="mini" id="dupBtn">🧹 ${dupN} doppelt</button>` : '');
+    + (dupN ? ` · <button class="mini" id="dupBtn">🧹 ${dupN} doppelt</button>` : '')
+    + (conN ? ` · <button class="mini" id="conBtn">⚠️ ${conN} Widerspruch</button>` : '');
   const db = document.getElementById('dupBtn'); if (db) db.onclick = () => showDuplicates();
+  const cb = document.getElementById('conBtn'); if (cb) cb.onclick = () => showConflicts();
   const lb = document.getElementById('looseBtn'); if (lb) lb.onclick = () => { document.getElementById('search').value = ''; listLooseOnly = !listLooseOnly; renderList(); };
   const shown = listLooseOnly ? hit.filter(p => !isConnected(p)) : hit;
   const isNew = p => p.added && Date.now() - p.added < 3 * 864e5;
@@ -2489,6 +2575,7 @@ document.getElementById('btnMenu').onclick = () => {
       <button class="btn" data-m="gedout">📤 GEDCOM-Datei exportieren <small>(für andere Stammbaum-Programme)</small></button>
       <button class="btn" data-m="gedin">📥 GEDCOM-Datei importieren</button>
       <button class="btn" data-m="dups">🧹 Doppelte Personen zusammenführen</button>
+      <button class="btn" data-m="conflicts">⚠️ Verbindungen prüfen <small>(wer doppelt im Baum erscheint)</small></button>
       <button class="btn" data-m="demo">👪 Beispiel-Familie laden</button>
       <button class="btn danger" data-m="wipe">🗑️ Alles löschen</button>
       <button class="btn" data-m="close">Schließen</button>
@@ -2504,6 +2591,7 @@ document.getElementById('btnMenu').onclick = () => {
     if (a === 'gedin') pickFile('ged');
     if (a === 'demo') { closeModal(); loadDemo(); }
     if (a === 'dups') { closeModal(); showDuplicates(); }
+    if (a === 'conflicts') { closeModal(); showConflicts(); }
     if (a === 'wipe') {
       if (n && !confirm('Wirklich ALLE Personen löschen? Das kann nicht rückgängig gemacht werden (außer mit einer Sicherung).')) return;
       data = emptyData(); save(); closeModal(); closeSheet(); refresh(true);

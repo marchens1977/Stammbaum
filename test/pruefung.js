@@ -69,6 +69,23 @@ function ok(bed, text) { console.log((bed ? '  ✓ ' : '  ✗ ') + text); if (!b
   const farbe = await page.evaluate(() => getComputedStyle(document.querySelector('header')).backgroundColor);
   ok(farbe === 'rgb(0, 45, 114)', 'Kopfzeile in Mets-Blau (' + farbe + ')');
 
+  console.log('Update der App:');
+  const upd = await page.evaluate(async () => {
+    const echt = window.fetch, r = {};
+    window.fetch = async () => new Response("const APP_VERSION = '2099-01-01 Nr. 999';");
+    await checkUpdate(false); r.neu = !!document.getElementById('updBar');
+    document.getElementById('updBar').remove();
+    window.fetch = async () => new Response("const APP_VERSION = '" + APP_VERSION + "';");
+    await checkUpdate(false); r.gleich = !document.getElementById('updBar');
+    window.fetch = async () => { throw new Error('offline'); };
+    await checkUpdate(false); r.offline = !document.getElementById('updBar');
+    window.fetch = echt; return r;
+  });
+  ok(upd.neu, 'neuere Version → Hinweis „Jetzt aktualisieren“ erscheint');
+  ok(upd.gleich, 'gleiche Version → kein Hinweis');
+  ok(upd.offline, 'ohne Internet → kein Absturz, kein Hinweis');
+  ok(await page.evaluate(() => versionNo('2026-11-19 Nr. 33') === 33 && versionNo('x') === 0), 'Versionsnummer wird richtig gelesen');
+
   if (process.argv.includes('--bild')) {
     await page.evaluate(() => { closeSheet(); loadDemo(); });
     await page.screenshot({ path: path.resolve(__dirname, 'vorschau.png') });

@@ -73,6 +73,7 @@ keine App für Dritte, keine Stammbäume über fremde Personen.
 | 2026-11-17 | **Doppelte zusammenführen** (`findDuplicates`/`mergeInto`): gleicher Name (Klang), passende Geburtsjahre, kein Widerspruch bei Eltern; behalten wird der Eintrag mit den meisten Verbindungen, Angaben/Notizen/Quellen/Verbindungen werden übernommen; danach erneute Suche (z. B. doppelte Kinder). Aufruf über Menü und „🧹 N doppelt“ in der Liste. **„🔗 Verbindungen bearbeiten“** zeigt alle bisherigen Verbindungen mit ✕ zum Lösen. Wird jemand als Geschwister einer Person eingetragen, aber war bisher Kind von deren Partner, wird angeboten, die alte Verbindung zu lösen (in Vorschlägen automatisch). Direkte Geschwister-Verbindungen gelten auch über mehrere Ecken. Version Nr. 30. |
 | 2026-11-17 | Rückmeldung: Doppelte nicht immer erkannt, Geschwister der Partnerin nicht verbunden/sichtbar, Name nicht änderbar. Ursachen + Lösung: (1) Änderung von Beziehung/Person/Name setzte den Haken nicht → wurde nicht gespeichert; jetzt **setzt jede Änderung in einer Zeile den Haken** (`tickRow`). (2) Bei schon vorhandenen Personen war der Name nur Text → jetzt in **jeder** Zeile drei Felder **Vorname / Nachname / geb.** (`.nf/.nl/.nb`), bei vorhandenen Personen werden Namensänderungen beim Speichern übernommen (`rename`); geratene Nachnamen passen sich auch bei vorhandenen Personen an. (3) Doppelte: Eltern-Widerspruch zählt nicht, wenn die Eltern selbst gleichnamig sind; „Karl“ ≈ „Karl Heinz“ bei gleichem Nachnamen; zusätzlich **„🧹 Ist doppelt – mit anderer Person zusammenführen“** in der Detailansicht (manuell). Version Nr. 31. |
 | 2026-11-19 | Rückmeldung „zwei Personen immer noch doppelt“: vermutlich nicht doppelt gespeichert, sondern **widersprüchlich verbunden** (z. B. Partnerin zusätzlich als Geschwister/Kind derselben Eltern) → Baum zeichnete sie zweimal, „Doppelte zusammenführen“ fand nichts. Jetzt: (1) **Baum zeichnet jede Person nur einmal** (auch Vorfahren); (2) `findConflicts`: Partner + Geschwister bzw. Partner + Elternteil wird erkannt – Warnkasten in der Detailansicht mit Knöpfen „✕ … lösen“ (`fixConflict`), Menüpunkt „⚠️ Verbindungen prüfen“, „⚠️ N Widerspruch“ in der Liste; „Doppelte zusammenführen“ verweist darauf, wenn keine echten Doppelten da sind. **Farbdesign New York Mets**: Blau `#002D72`, Orange `#FF5910` (Kopfzeile blau mit orangem Streifen, „＋ Person“ und hervorgehobene Person orange, Männer hellblau, Frauen hellorange; App-Symbol umgefärbt). Erste automatische Prüfung `test/pruefung.js`. Version Nr. 32. |
+| 2026-11-19 | **Update der App:** Menü „🔄 Nach Update suchen“ + automatische Suche beim Start und beim Zurückkehren in die App (max. alle 30 Min.). Holt `index.html` am Browser-Speicher vorbei, vergleicht `APP_VERSION` („Nr. N“, `versionNo`). Neuere Version → oranger Hinweis „Jetzt aktualisieren“ (`installUpdate`: App-Speicher `stammbaum-v1` leeren, Dateien neu holen, Service Worker aktualisieren, neu laden). Familiendaten (localStorage) bleiben unberührt. **Wichtig:** `APP_VERSION` bei jeder Änderung hochzählen, sonst erkennt die App das Update nicht. Version Nr. 33. |
 | 2026-11-16 | Foto-Tipp im Einfügen-Bereich (Galerie „T“/Google Lens → kopieren → einfügen); Schutz: Claude-Antwort im Personen-Formular wird erkannt und umgeleitet |
 
 ## 4. Nächste Schritte
@@ -84,6 +85,9 @@ keine App für Dritte, keine Stammbäume über fremde Personen.
 - Weitere Ideen: Fotos größer ansehen, Ereignisse (Hochzeit, Umzug), Druckansicht.
 
 ## 5. Zusammenarbeit
+- **Direkt in `main` übernehmen (Erlaubnis des Nutzers, 2026-11-19):** Claude darf fertige, getestete Änderungen selbst in `main`
+  zusammenführen und hochladen (keine Pull Requests nötig). Vorher: Prüfungen laufen lassen, Datenschutz-Suche nach echten Namen,
+  `APP_VERSION` hochzählen. Nichts löschen/überschreiben ohne Rückfrage bleibt weiterhin gültig.
 - Nutzer ist **Programmier-Laie**: einfaches Deutsch, Fachbegriffe kurz erklären.
 - Kleine, nummerierte Schritte; klar sagen, was Claude übernimmt und was der Nutzer tun muss.
 - Vor dem Hochladen testen und ein Vorschaubild zeigen.
@@ -102,9 +106,11 @@ keine App für Dritte, keine Stammbäume über fremde Personen.
   Lädt `index.html` im Browser mit einer **erfundenen Familie Weber** und prüft: Widersprüche (Partner + Geschwister/Elternteil) werden erkannt
   und lassen sich lösen, niemand wird im Baum doppelt gezeichnet, echte Doppelte werden gefunden und zusammengeführt, Kopfzeile in Mets-Blau.
   Mit `--bild` entsteht `test/vorschau.png` (Vorschaubild, wird nicht hochgeladen – `.gitignore`).
+  Prüft außerdem die Update-Suche (neuere/gleiche Version, ohne Internet).
 - **Hilfsprogramme:** `python3 werkzeuge/icon_farben.py` färbt grüne Teile der App-Symbole in Mets-Blau/Orange um (nur einmal nötig, ist schon geschehen).
 - **Tests für den Nutzer (am Handy):** Wikipedia-Abruf und „🌐 Seite / PDF auslesen“; Such-Links (GEDBAS, Arolsen, DDB, Find a Grave);
   Teilen → Stammbaum (Text, Link, Bild); „📷 Bild auslesen“; „🎤 Person einsprechen“; Doppelte zusammenführen und Geschwister der Partnerin (Nr. 31);
+  **Nr. 33:** Menü → „🔄 Nach Update suchen“ zeigt „App ist aktuell“; bei der nächsten Version erscheint oben der orange Hinweis.
   **Nr. 32:** Erscheinen die beiden Personen noch doppelt? Detailansicht der Person öffnen → orangen Warnkasten „⚠️ … Partner und gleichzeitig Geschwister“
   → falsche Verbindung lösen. Neue Farben am Handy ansehen (evtl. App einmal neu laden; Symbol auf dem Startbildschirm ändert sich erst nach Neu-Installieren).
 

@@ -139,6 +139,10 @@
   div.sugl { display: flex; gap: 10px; align-items: flex-start; } div.sugl input[type=checkbox] { width: 24px; height: 24px; flex: none; margin-top: 1px; }
   div.sug.holds { background: #f1f3f7; opacity: .85; }
   .sugrole select { width: auto; max-width: 100%; padding: 5px 6px; font-size: .88rem; margin: 3px 2px 0 0; border-radius: 8px; border: 1px solid #b8c4d8; background: #fff; }
+  #updBar { position: fixed; left: 10px; right: 10px; top: calc(70px + env(safe-area-inset-top)); z-index: 25; display: flex; align-items: center; gap: 8px;
+    background: var(--paper); border: 2px solid var(--gold); border-radius: 14px; padding: 8px 10px; box-shadow: 0 4px 14px rgba(0,20,60,.25); font-size: .92rem; }
+  #updBar span { flex: 1; } #updBar .btn { background: var(--gold); color: #fff; border-color: var(--gold); padding: 8px 10px; }
+  #updBar .updx { background: none; border: none; font-size: 1.2rem; color: var(--muted); }
   div.sug.conflict { background: #fff4ec; border-color: var(--gold); } .fixbtn { display: block; width: 100%; margin-top: 6px; text-align: left; }
   div.sug { background: #fff; border: 1px solid #cdd6e4; border-radius: 12px; padding: 10px; margin: 0 0 8px; font-size: .95rem; }
   label.sugl { display: flex; gap: 10px; align-items: flex-start; margin: 0; color: var(--ink); font-size: .95rem; }
@@ -229,7 +233,7 @@ const MAX_ANCESTOR_GENS = 3;      // wie viele Generationen nach oben (Eltern, G
 const MAX_DESC_GENS = 2;          // wie viele Generationen nach unten (Kinder, Enkel)
 const PROTECT_YEARS = 110;        // wer vor mehr als so vielen Jahren geboren wurde, gilt als verstorben
 const STORE_KEY = 'stammbaum-daten-v1';
-const APP_VERSION = '2026-11-19 Nr. 32';   // bei jeder Änderung hochzählen – steht unten im Menü
+const APP_VERSION = '2026-11-19 Nr. 33';   // bei jeder Änderung hochzählen – steht unten im Menü
 const THIS_YEAR = new Date().getFullYear();
 
 // ====================== Daten ======================
@@ -2577,6 +2581,7 @@ document.getElementById('btnMenu').onclick = () => {
       <button class="btn" data-m="dups">🧹 Doppelte Personen zusammenführen</button>
       <button class="btn" data-m="conflicts">⚠️ Verbindungen prüfen <small>(wer doppelt im Baum erscheint)</small></button>
       <button class="btn" data-m="demo">👪 Beispiel-Familie laden</button>
+      <button class="btn" data-m="update">🔄 Nach Update suchen</button>
       <button class="btn danger" data-m="wipe">🗑️ Alles löschen</button>
       <button class="btn" data-m="close">Schließen</button>
     </div>
@@ -2592,6 +2597,7 @@ document.getElementById('btnMenu').onclick = () => {
     if (a === 'demo') { closeModal(); loadDemo(); }
     if (a === 'dups') { closeModal(); showDuplicates(); }
     if (a === 'conflicts') { closeModal(); showConflicts(); }
+    if (a === 'update') { closeModal(); checkUpdate(true); }
     if (a === 'wipe') {
       if (n && !confirm('Wirklich ALLE Personen löschen? Das kann nicht rückgängig gemacht werden (außer mit einer Sicherung).')) return;
       data = emptyData(); save(); closeModal(); closeSheet(); refresh(true);
@@ -2811,6 +2817,49 @@ function loadDemo() {
   d.rootId = wi; d.focusId = wi;
   data = d; save(); closeSheet(); showTree(); refresh(true);
 }
+
+// ====================== Update der App ======================
+// Holt die neueste index.html (am Browser-Speicher vorbei) und vergleicht die Versionsnummer „Nr. N“.
+// Die Familiendaten liegen getrennt im Browser (localStorage) und bleiben beim Update unverändert.
+const versionNo = v => { const m = String(v || '').match(/Nr\.\s*(\d+)/); return m ? +m[1] : 0; };
+let lastUpdateCheck = 0;
+async function checkUpdate(manual) {
+  lastUpdateCheck = Date.now();
+  let latest = '';
+  try {
+    const r = await fetch('index.html?update=' + Date.now(), { cache: 'no-store' });
+    const m = (await r.text()).match(/const APP_VERSION = '([^']+)'/); latest = m ? m[1] : '';
+  } catch (e) {}
+  if (!latest) { if (manual) alert('Konnte nicht nach Updates suchen – bist du mit dem Internet verbunden?'); return; }
+  if (versionNo(latest) > versionNo(APP_VERSION)) showUpdateBar(latest);
+  else if (manual) alert(`✓ Die App ist aktuell.\n\nVersion ${APP_VERSION}`);
+}
+function showUpdateBar(latest) {
+  if (document.getElementById('updBar')) return;
+  const bar = document.createElement('div'); bar.id = 'updBar';
+  bar.innerHTML = `<span>🔄 <b>Neue Version Nr. ${versionNo(latest)}</b> ist da.</span>
+    <button class="btn" id="updNow">Jetzt aktualisieren</button><button class="updx" id="updLater" aria-label="Später">✕</button>`;
+  document.body.appendChild(bar);
+  bar.querySelector('#updLater').onclick = () => bar.remove();
+  bar.querySelector('#updNow').onclick = installUpdate;
+}
+async function installUpdate() {
+  const b = document.getElementById('updNow'); if (b) { b.disabled = true; b.textContent = 'Wird geladen …'; }
+  try {
+    save();   // Daten sicher speichern (bleiben ohnehin erhalten)
+    // alte App-Dateien aus dem Speicher werfen (nicht das geteilte Bild) und neu holen
+    if (window.caches) await caches.delete('stammbaum-v1');
+    await Promise.all(['index.html', './', 'sw.js', 'manifest.json'].map(u => fetch(u, { cache: 'reload' }).catch(() => {})));
+    if (navigator.serviceWorker) { const reg = await navigator.serviceWorker.getRegistration(); if (reg) await reg.update().catch(() => {}); }
+  } catch (e) {}
+  location.replace(location.pathname + '?v=' + Date.now());
+}
+// automatisch: beim Start und wenn die App wieder geöffnet wird (höchstens alle 30 Minuten)
+if (location.protocol === 'https:') {
+  setTimeout(() => checkUpdate(false), 3000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - lastUpdateCheck > 30 * 60000) checkUpdate(false); });
+}
+if (/[?&]v=\d+/.test(location.search)) history.replaceState(null, '', location.pathname + location.search.replace(/[?&]v=\d+/, '').replace(/^&/, '?'));
 
 // ====================== Start ======================
 if (Object.keys(data.persons).length) save();   // räumt dabei auch alte doppelte Notizen/Quellen auf
